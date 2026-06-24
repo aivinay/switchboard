@@ -11,6 +11,7 @@ repository-code: "https://github.com/aivinay/switchboard"
 url: "https://github.com/aivinay/switchboard"
 license: MIT
 version: 0.1.1
+date-released: "2026-06-24"
 keywords:
   - LLM routing
   - local-first AI
@@ -20,18 +21,18 @@ keywords:
   - semantic memory
 identifiers:
   - type: doi
-    value: 10.5281/zenodo.20789935
-    description: "Zenodo preprint (v1.0)"
+    value: 10.5281/zenodo.20836918
+    description: "Zenodo reproduction bundle and preprint"
 preferred-citation:
   type: article
-  title: "Switchboard: Privacy-Aware Hybrid Routing Across Heterogeneous AI Agents on a Single Workstation"
+  title: "Switchboard: Privacy-Aware Hybrid Routing Across Heterogeneous AI Agents"
   authors:
     - family-names: Gupta
       given-names: Vinay
       orcid: "https://orcid.org/0009-0000-0749-6609"
   year: 2026
-  doi: 10.5281/zenodo.20789935
-  url: "https://doi.org/10.5281/zenodo.20789935"
+  doi: 10.5281/zenodo.20836918
+  url: "https://doi.org/10.5281/zenodo.20836918"
   publisher:
     name: Zenodo
   notes: "Preprint on Zenodo."

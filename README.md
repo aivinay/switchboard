@@ -7,7 +7,7 @@
   <a href="https://pypi.org/project/switchboard-local/"><img src="https://img.shields.io/pypi/v/switchboard-local.svg" alt="PyPI"></a>
   <img src="https://img.shields.io/badge/python-3.11%2B-blue.svg" alt="Python 3.11+">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT"></a>
-  <a href="https://doi.org/10.5281/zenodo.20789935"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20789935-blue.svg" alt="DOI"></a>
+  <a href="https://doi.org/10.5281/zenodo.20836918"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20836918-blue.svg" alt="DOI"></a>
 </p>
 
 <p align="center">
@@ -138,7 +138,7 @@ numbers, confidence intervals, and significance tests are in the paper):
 sensitive prompt to stay leak-free, so its coverage collapses — exactly the gap
 Switchboard closes. <strong>Zero measured leaks in every condition and every run.</strong></sub>
 
-These numbers come from a real-backend benchmark whose full harness travels with the paper's [reproduction bundle on Zenodo](https://doi.org/10.5281/zenodo.20789935).
+These numbers come from a real-backend benchmark whose full harness travels with the paper's [reproduction bundle on Zenodo](https://doi.org/10.5281/zenodo.20836918).
 
 ## Privacy
 
@@ -190,10 +190,10 @@ Provider API keys are referenced **by environment-variable name** (e.g.
 ## The paper
 
 Switchboard is described in a preprint — *"Privacy-Aware Hybrid Routing Across
-Heterogeneous AI Agents on a Single Workstation."* The manuscript, the multi-run
+Heterogeneous AI Agents."* The manuscript, the multi-run
 benchmark harness, the statistical-aggregation and figure scripts, and the
 per-case records are archived together as a reproduction bundle on Zenodo:
-[10.5281/zenodo.20789935](https://doi.org/10.5281/zenodo.20789935).
+[10.5281/zenodo.20836918](https://doi.org/10.5281/zenodo.20836918).
 
 This repository ships only the software. It deliberately does not carry the
 paper's experiment-running or figure-generation tooling — that lives with the
@@ -212,11 +212,11 @@ the privacy invariant described there.
 ## Citing Switchboard
 
 A preprint is available on Zenodo with a citable DOI —
-[10.5281/zenodo.20789935](https://doi.org/10.5281/zenodo.20789935). See
+[10.5281/zenodo.20836918](https://doi.org/10.5281/zenodo.20836918). See
 [CITATION.cff](CITATION.cff) for machine-readable metadata.
 
 > V. Gupta, "Switchboard: Privacy-Aware Hybrid Routing Across Heterogeneous AI
-> Agents on a Single Workstation," Zenodo, 2026, doi:10.5281/zenodo.20789935.
+> Agents," Zenodo, 2026, doi:10.5281/zenodo.20836918.
 
 ## License
 
