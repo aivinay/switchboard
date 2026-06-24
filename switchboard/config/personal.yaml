@@ -1,0 +1,117 @@
+profile:
+  user_id: "local-user"
+  default_project: "personal"
+
+preferences:
+  default_mode: "auto"
+  local_first: true
+  prefer_free_models: true
+  allow_cloud: false
+  require_confirmation_for_scarce_models: true
+  private_mode: true
+  avoid_scarce_for_simple_tasks: true
+  use_coding_model_for_coding: true
+  use_frontier_or_manual_recommendation_for_complex_reasoning: true
+  compress_long_context_before_premium_recommendation: true
+  cache_routing: true
+  cache_answers: false
+  # Switchboard Core router mode: rules | llm | hybrid | learned.
+  # "learned" classifies with one tiny embedding lookup (~50ms, no extra LLM);
+  # falls back to deterministic rules if weights are missing or confidence is
+  # low. "llm"/"hybrid" call a small Ollama model instead (slower).
+  router_mode: "learned"
+  llm_router_model: "llama3.2:3b"
+  # Learned tool dispatcher: second-chance tool detection when the regex
+  # detector misses ("what is 87 divided by 4"). Predictions only count if
+  # the actual tool verifies them. Train once with:
+  #   switchboard train-dispatcher
+  tool_dispatcher_enabled: true
+  tool_dispatcher_min_confidence: 0.8
+  # Learned sensitivity escalator: catches private phrasings the keyword
+  # hints miss; can only ADD protection. Train once with:
+  #   switchboard train-sensitivity
+  sensitivity_escalator_enabled: true
+  sensitivity_escalator_min_confidence: 0.7
+  # Headroom-style heuristic prompt compression before routing.
+  compression_enabled: true
+  compression_threshold_tokens: 1000
+  # Embedding-based long-term semantic memory (local embeddings only).
+  semantic_memory_enabled: true
+  semantic_memory_top_k: 3
+  embedding_model: "nomic-embed-text"
+  # Allow Claude Code to use its WebSearch tool for live-data questions
+  # (pre-approved, uses your Claude subscription's search). Off by default.
+  claude_code_web_search: true
+  # Live-data grounding (keyless providers; informational, not advice).
+  finance_provider: "yahoo"
+  news_provider: "google_news_rss"
+  # Closed feedback loop: thumbs-down stores (context, response) locally and
+  # auto-retrains the learned router after this many "wrong model" corrections.
+  store_feedback_examples: true
+  feedback_retrain_threshold: 5
+
+budgets:
+  monthly_api_budget_usd: 10
+  daily_premium_units: 20
+
+savings:
+  default_baseline_model: "manual/claude-web"
+  premium_unit_value_usd: null
+  assume_premium_for_unknown: false
+
+local_runtime:
+  # memory_saver: keep one hot model when possible; good for tighter RAM.
+  # balanced: keep a general model plus a specialist when useful; recommended for 32 GB Macs.
+  # low_latency: favor already-loaded good-enough models to avoid cold starts.
+  performance_mode: "balanced"
+  max_loaded_models: 2
+  keep_alive: "10m"
+  reuse_hot_model_if_good_enough: true
+  model_switch_penalty_ms: 3000
+  prefer_hot_model_for_simple_tasks: true
+  unload_after_benchmark: true
+
+providers:
+  mock:
+    type: "mock"
+    enabled: true
+
+  ollama:
+    type: "local"
+    base_url: "http://localhost:11434"
+    enabled: true
+
+  lmstudio:
+    type: "openai_compatible_local"
+    base_url: "http://localhost:1234/v1"
+    enabled: false
+
+  openai:
+    type: "cloud_api"
+    env_api_key: "OPENAI_API_KEY"
+    enabled: false
+    scarce: true
+
+  anthropic:
+    type: "cloud_api"
+    env_api_key: "ANTHROPIC_API_KEY"
+    enabled: false
+    scarce: true
+
+  claude_web:
+    type: "manual_subscription"
+    enabled: true
+    scarce: true
+    notes: "Recommendation/tracking only. Do not automate web UI."
+
+  chatgpt_web:
+    type: "manual_subscription"
+    enabled: true
+    scarce: true
+    notes: "Recommendation/tracking only. Do not automate web UI."
+
+  codex:
+    type: "manual_subscription"
+    enabled: true
+    scarce: true
+    notes: "Recommendation/tracking only unless official API/CLI integration exists."

@@ -1,0 +1,48 @@
+.DS_Store
+.env
+AGENTS.md
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.venv/
+venv/
+reports/
+
+# Local Switchboard runtime state
+switchboard*.db
+*.sqlite
+*.sqlite3
+
+# Python/tool caches
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Local run logs
+tmp/
+
+# Per-user training caches and harness output (rebuilt on demand)
+data/*.jsonl
+harness_results.json
+
+# --- Private: never publish (kept local only, not part of the OSS release) ---
+docs/publication_plan.md
+docs/research_plan.md
+docs/reviews/
+# Paper manuscript + submission materials: kept out of the code repo while the
+# paper is in review (the repo links it via CITATION.cff). Add the published
+# PDF + DOI here after acceptance if you want it in-repo.
+docs/paper/
+# Local migration helper (one-off; not for the repo)
+finish_rename.sh

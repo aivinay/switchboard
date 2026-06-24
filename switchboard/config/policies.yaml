@@ -1,0 +1,49 @@
+policies:
+  - policy_id: default
+    tenant_id: default
+    workflow_id: default
+    version: "2026-05-31.1"
+    allowed_providers: ["mock"]
+    blocked_providers: []
+    allowed_models: []
+    blocked_models: []
+    max_cost_per_request_usd: 0.05
+    max_latency_ms: 1500
+    allowed_sensitivity_levels: ["public", "internal", "confidential", "regulated", "unknown"]
+    require_private_model_for_regulated_data: true
+    allow_prompt_logging: false
+    allow_response_logging: false
+    fallback_model: mock/frontier
+    default_routing_mode: observe
+  - policy_id: demo-active
+    tenant_id: demo
+    workflow_id: default
+    version: "2026-05-31.1"
+    allowed_providers: ["mock"]
+    blocked_providers: []
+    allowed_models: []
+    blocked_models: []
+    max_cost_per_request_usd: 0.05
+    max_latency_ms: 1500
+    allowed_sensitivity_levels: ["public", "internal", "confidential", "regulated", "unknown"]
+    require_private_model_for_regulated_data: true
+    allow_prompt_logging: false
+    allow_response_logging: false
+    fallback_model: mock/frontier
+    default_routing_mode: active
+  - policy_id: demo-no-regulated-data
+    tenant_id: restricted
+    workflow_id: default
+    version: "2026-05-31.1"
+    allowed_providers: ["mock"]
+    blocked_providers: []
+    allowed_models: []
+    blocked_models: []
+    max_cost_per_request_usd: 0.05
+    max_latency_ms: 1500
+    allowed_sensitivity_levels: ["public", "internal", "confidential", "unknown"]
+    require_private_model_for_regulated_data: true
+    allow_prompt_logging: false
+    allow_response_logging: false
+    fallback_model: mock/frontier
+    default_routing_mode: active

@@ -1,0 +1,295 @@
+models:
+  - model_id: mock/small
+    provider: mock
+    display_name: Mock Small Local
+    kind: mock
+    context_window: 8192
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 120
+    supports_tools: false
+    supports_json_schema: true
+    supports_vision: false
+    allowed_regions: ["local"]
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: small
+    good_for: ["summarisation", "classification", "extraction"]
+    enabled: true
+  - model_id: mock/medium
+    provider: mock
+    display_name: Mock Medium Local
+    kind: mock
+    context_window: 32768
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 350
+    supports_tools: true
+    supports_json_schema: true
+    supports_vision: false
+    allowed_regions: ["local"]
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: medium
+    good_for: ["summarisation", "coding", "reasoning", "creative"]
+    enabled: true
+  - model_id: mock/frontier
+    provider: mock
+    display_name: Mock Frontier Private
+    kind: mock
+    context_window: 128000
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 900
+    supports_tools: true
+    supports_json_schema: true
+    supports_vision: true
+    allowed_regions: ["local"]
+    data_policy: private
+    scarce: false
+    privacy: private
+    quality_tier: frontier
+    good_for: ["coding", "reasoning", "planning", "creative"]
+    enabled: true
+  - model_id: ollama/llama3.2:3b
+    provider: ollama
+    provider_model_name: llama3.2:3b
+    display_name: Ollama Llama 3.2 3B
+    kind: local
+    context_window: 131072
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 350
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: small
+    good_for: ["summarisation", "rewrite", "classification", "extraction", "simple_qa"]
+    notes: "Default local chat model: fast and light for daily summaries,
+      rewrites, and chat. Heavier local options below are opt-in."
+    enabled: true
+  - model_id: ollama/qwen3:8b
+    provider: ollama
+    provider_model_name: qwen3:8b
+    display_name: Ollama Qwen3 8B
+    kind: local
+    context_window: 32768
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 850
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: medium
+    good_for: ["general", "summarisation", "reasoning", "planning", "rewrite", "factual_qa"]
+    notes: "General local assistant for moderate reasoning and writing.
+      Thinking model: slower per answer; used as the benchmark judge."
+    enabled: true
+  - model_id: ollama/qwen2.5-coder:7b
+    provider: ollama
+    provider_model_name: qwen2.5-coder:7b
+    display_name: Ollama Qwen2.5 Coder 7B
+    kind: local
+    context_window: 32768
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 900
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: medium
+    good_for: ["coding", "debugging", "code_review", "code_fixing"]
+    notes: "Default local coding and debugging model."
+    enabled: true
+  - model_id: ollama/deepseek-r1:8b
+    provider: ollama
+    provider_model_name: deepseek-r1:8b
+    display_name: Ollama DeepSeek R1 8B
+    kind: local
+    context_window: 32768
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 1200
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: frontier
+    good_for:
+      ["reasoning", "complex_debugging", "planning", "tradeoff_analysis", "architecture_design"]
+    notes: "Local reasoning model for complex debugging, planning, and tradeoff analysis."
+    enabled: true
+  - model_id: ollama/gemma3:12b
+    provider: ollama
+    provider_model_name: gemma3:12b
+    display_name: Ollama Gemma 3 12B
+    kind: local
+    context_window: 128000
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 1400
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: frontier
+    good_for: ["summarisation", "reasoning", "planning", "rewrite", "private_summary"]
+    notes: "Optional stronger local fallback for private summaries; disabled because it is not part of the default installed pack."
+    enabled: false
+  - model_id: ollama/nomic-embed-text
+    provider: ollama
+    provider_model_name: nomic-embed-text
+    display_name: Ollama Nomic Embed Text
+    kind: local_embedding
+    context_window: 8192
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 250
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: embedding
+    good_for: ["embeddings", "memory", "search"]
+    notes: "Embeddings and memory/search only; never selected for chat responses."
+    must_never_be_selected_for_chat: true
+    enabled: true
+  - model_id: ollama/qwen2.5-coder:14b
+    provider: ollama
+    provider_model_name: qwen2.5-coder:14b
+    display_name: Ollama Qwen2.5 Coder 14B
+    kind: local
+    context_window: 32768
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 1800
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: frontier
+    good_for: ["coding", "debugging", "code_review", "code_fixing", "reasoning"]
+    notes: "Heavier coding model for stronger machines; disabled by default."
+    enabled: false
+  - model_id: ollama/deepseek-r1:14b
+    provider: ollama
+    provider_model_name: deepseek-r1:14b
+    display_name: Ollama DeepSeek R1 14B
+    kind: local
+    context_window: 32768
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 2200
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: frontier
+    good_for: ["reasoning", "planning", "debugging", "tradeoff_analysis"]
+    notes: "Heavier reasoning model for stronger machines; disabled by default."
+    enabled: false
+  - model_id: ollama/mistral-small3.2:24b
+    provider: ollama
+    provider_model_name: mistral-small3.2:24b
+    display_name: Ollama Mistral Small 3.2 24B
+    kind: local
+    context_window: 128000
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 3000
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: frontier
+    good_for: ["summarisation", "reasoning", "planning", "rewrite", "private_summary"]
+    notes: "Heavier local fallback for stronger machines; disabled by default."
+    enabled: false
+  - model_id: lmstudio/local-openai-compatible
+    provider: lmstudio
+    display_name: LM Studio Local OpenAI-Compatible
+    kind: openai_compatible_local
+    context_window: 32768
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 700
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: medium
+    good_for: ["summarisation", "coding", "reasoning", "creative"]
+    enabled: true
+  - model_id: manual/claude-web
+    provider: claude_web
+    display_name: Claude Web
+    kind: manual_subscription
+    context_window: 200000
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 0
+    data_policy: manual
+    scarce: true
+    privacy: manual
+    quality_tier: frontier
+    good_for: ["reasoning", "planning", "coding", "creative"]
+    enabled: true
+  - model_id: manual/chatgpt-web
+    provider: chatgpt_web
+    display_name: ChatGPT Web
+    kind: manual_subscription
+    context_window: 128000
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 0
+    data_policy: manual
+    scarce: true
+    privacy: manual
+    quality_tier: frontier
+    good_for: ["reasoning", "planning", "creative", "summarisation"]
+    enabled: true
+  - model_id: manual/codex
+    provider: codex
+    display_name: Codex
+    kind: manual_subscription
+    context_window: 128000
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 0
+    data_policy: manual
+    scarce: true
+    privacy: manual
+    quality_tier: frontier
+    good_for: ["coding", "reasoning", "planning"]
+    enabled: true
+  - model_id: openai/gpt-4.1-mini
+    provider: openai
+    display_name: OpenAI GPT-4.1 Mini Placeholder
+    kind: cloud_api
+    context_window: 128000
+    cost_per_million_input_tokens: 0.40
+    cost_per_million_output_tokens: 1.60
+    average_latency_ms: 700
+    supports_tools: true
+    supports_json_schema: true
+    supports_vision: true
+    allowed_regions: ["cloud"]
+    data_policy: standard
+    scarce: true
+    privacy: cloud
+    quality_tier: medium
+    good_for: ["summarisation", "coding", "reasoning", "creative"]
+    enabled: true
+  - model_id: anthropic/claude-haiku-placeholder
+    provider: anthropic
+    display_name: Anthropic Claude Haiku Placeholder
+    kind: cloud_api
+    context_window: 200000
+    cost_per_million_input_tokens: 0.80
+    cost_per_million_output_tokens: 4.00
+    average_latency_ms: 800
+    supports_tools: true
+    supports_json_schema: false
+    supports_vision: true
+    allowed_regions: ["cloud"]
+    data_policy: standard
+    scarce: true
+    privacy: cloud
+    quality_tier: medium
+    good_for: ["summarisation", "coding", "reasoning", "creative"]
+    enabled: true

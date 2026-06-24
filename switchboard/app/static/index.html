@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Switchboard</title>
+    <link rel="stylesheet" href="/ui/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="model-picker">
+          <button
+            id="model-picker-button"
+            class="model-picker-button"
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded="false"
+          >
+            <span id="selected-model">Auto</span>
+            <span class="chevron" aria-hidden="true">⌄</span>
+          </button>
+          <div id="model-menu" class="model-menu" role="listbox" aria-label="Model" hidden>
+            <button
+              class="model-option selected"
+              type="button"
+              role="option"
+              aria-selected="true"
+              data-model="auto"
+            >
+              <span>
+                <strong>Auto</strong>
+                <small>Routes automatically</small>
+              </span>
+              <span class="checkmark" aria-hidden="true">✓</span>
+            </button>
+            <button
+              class="model-option"
+              type="button"
+              role="option"
+              aria-selected="false"
+              data-model="codex"
+            >
+              <span>
+                <strong>Codex</strong>
+                <small>Best for coding tasks</small>
+              </span>
+              <span class="checkmark" aria-hidden="true">✓</span>
+            </button>
+            <button
+              class="model-option"
+              type="button"
+              role="option"
+              aria-selected="false"
+              data-model="claude"
+            >
+              <span>
+                <strong>Claude</strong>
+                <small>Good for reasoning and design</small>
+              </span>
+              <span class="checkmark" aria-hidden="true">✓</span>
+            </button>
+            <button
+              class="model-option"
+              type="button"
+              role="option"
+              aria-selected="false"
+              data-model="ollama"
+            >
+              <span>
+                <strong>Ollama</strong>
+                <small>Runs locally</small>
+              </span>
+              <span class="checkmark" aria-hidden="true">✓</span>
+            </button>
+          </div>
+        </div>
+        <h1>Switchboard</h1>
+        <button id="new-chat" class="new-chat-button" type="button" title="Start a new chat">
+          + New chat
+        </button>
+      </header>
+
+      <section id="messages" class="messages" aria-live="polite"></section>
+
+      <form id="chat-form" class="composer">
+        <textarea
+          id="message"
+          rows="1"
+          placeholder="Ask Switchboard..."
+          autocomplete="off"
+          aria-label="Message"
+        ></textarea>
+        <div class="composer-footer">
+          <span aria-hidden="true"></span>
+          <button id="send" class="send-button" type="submit" aria-label="Send message" disabled>
+            <span aria-hidden="true">↑</span>
+          </button>
+        </div>
+      </form>
+    </main>
+    <script src="/ui/static/app.js" defer></script>
+  </body>
+</html>
