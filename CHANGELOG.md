@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-06-24
+
+### Fixed
+- Ship the web UI static assets (`switchboard/app/static/`) in the wheel so `switchboard ui` works from a PyPI install. They were omitted from `package-data` in 0.1.0, so the server crashed on startup with `Directory '.../app/static' does not exist`.
+
 ## [0.1.0] - 2026-06-24
 
 First public release.
