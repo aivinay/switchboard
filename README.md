@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/aivinay/switchboard/actions/workflows/ci.yml"><img src="https://github.com/aivinay/switchboard/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="RELEASE.md"><img src="https://img.shields.io/badge/PyPI-pending-lightgrey.svg" alt="PyPI: pending"></a>
+  <a href="https://pypi.org/project/switchboard-local/"><img src="https://img.shields.io/pypi/v/switchboard-local.svg" alt="PyPI"></a>
   <img src="https://img.shields.io/badge/python-3.11%2B-blue.svg" alt="Python 3.11+">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT"></a>
   <a href="https://doi.org/10.5281/zenodo.20789935"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20789935-blue.svg" alt="DOI"></a>
@@ -75,16 +75,14 @@ learned component — is down.
 
 ## Get started (60 seconds)
 
-PyPI release is pending. Until the first release is published:
+```bash
+pip install switchboard-local
+```
+
+Or install the latest unreleased version from source:
 
 ```bash
 pip install "git+https://github.com/aivinay/switchboard.git"
-```
-
-After the PyPI release:
-
-```bash
-pip install switchboard-local
 ```
 
 ```bash
