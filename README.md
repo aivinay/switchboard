@@ -79,12 +79,6 @@ learned component — is down.
 pip install switchboard-local
 ```
 
-Or install the latest unreleased version from source:
-
-```bash
-pip install "git+https://github.com/aivinay/switchboard.git"
-```
-
 ```bash
 # point it at a local model runtime (install Ollama, then pull a small model)
 ollama pull llama3.2:3b
