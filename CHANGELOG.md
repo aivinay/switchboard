@@ -33,7 +33,7 @@ First public release.
   suite.
 - The multi-run experiment harness, statistical aggregation, and figure
   generation used for the paper are distributed with the paper's reproduction
-  bundle (Zenodo, doi:10.5281/zenodo.20789935), not this repository.
+  bundle (Zenodo, doi:10.5281/zenodo.20836918), not this repository.
 - FastAPI service, CLI (`switchboard`), and a minimal local web UI.
 
 [Unreleased]: https://github.com/aivinay/switchboard/compare/v0.1.0...HEAD
