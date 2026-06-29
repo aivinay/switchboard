@@ -24,6 +24,8 @@
   <a href="docs/">Docs</a>
 </p>
 
+![Switchboard automatic routing demo](auto_route_demo.gif)
+
 ---
 
 > Switchboard routes prompts to the right model while preserving context through
