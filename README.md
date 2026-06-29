@@ -1,4 +1,9 @@
-<h1 align="center">Switchboard</h1>
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/switchboard-wordmark-dark.svg">
+    <img src="assets/switchboard-wordmark.svg" alt="Switchboard" width="760">
+  </picture>
+</h1>
 
 <p align="center"><strong>Local-first prompt router for Codex, Claude Code, and Ollama.</strong></p>
 

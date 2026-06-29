@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="156" viewBox="0 0 960 156" role="img" aria-labelledby="title desc">
+  <title id="title">Switchboard</title>
+  <desc id="desc">Switchboard wordmark with simple routing lines.</desc>
+  <rect width="960" height="156" fill="none"/>
+  <g fill="none" stroke="#14b8a6" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity="0.95">
+    <path d="M70 58h54c28 0 28 40 56 40h42"/>
+    <path d="M70 98h54c28 0 28-40 56-40h42"/>
+    <circle cx="70" cy="58" r="9" fill="#14b8a6" stroke="none"/>
+    <circle cx="70" cy="98" r="9" fill="#14b8a6" stroke="none"/>
+    <circle cx="222" cy="58" r="9" fill="#14b8a6" stroke="none"/>
+    <circle cx="222" cy="98" r="9" fill="#14b8a6" stroke="none"/>
+  </g>
+  <text
+    x="252"
+    y="105"
+    fill="#24292f"
+    font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif"
+    font-size="82"
+    font-weight="850"
+    letter-spacing="-1"
+  >Switchboard</text>
+</svg>
