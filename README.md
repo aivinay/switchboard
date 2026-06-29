@@ -2,6 +2,10 @@
 
 <p align="center"><strong>A privacy-aware, local-first router across your CLI coding agents and local LLMs.</strong></p>
 
+> **Why this matters now.** In mid-2026, employers started *rationing* AI: Uber capped engineers at $1,500/month per AI coding tool after burning its 2026 AI budget in four months ([Bloomberg](https://www.bloomberg.com/news/articles/2026-06-02/uber-caps-usage-of-ai-tools-like-claude-code-to-cut-costs)); Microsoft is moving its Experiences + Devices org off Claude Code to GitHub Copilot CLI ([Windows Central](https://www.windowscentral.com/microsoft/microsoft-cancels-claude-code-licenses-shifting-developers-to-github-copilot-cli-a-move-likely-driven-by-financial-motives)). A spend cap is a blunt instrument: it throttles your best engineers and does nothing about proprietary code leaving for third-party models. The structural fix is **routing, not rationing** — a thin local-first layer that sends only what's worth it to a premium model, keeps sensitive work on-device, and compresses context.
+>
+> **Switchboard is a reference implementation of that pattern.** On a 100-case benchmark it kept **62% of requests off premium agents** (38% premium usage) at near-premium quality, full coverage, and **zero measured privacy leaks** [(see the benchmark below)](#proof). It is not (yet) an enterprise product — it's the smallest honest proof that the pattern works, with a reproducible benchmark to back it.
+
 <p align="center">
   <a href="https://github.com/aivinay/switchboard/actions/workflows/ci.yml"><img src="https://github.com/aivinay/switchboard/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://pypi.org/project/switchboard-local/"><img src="https://img.shields.io/pypi/v/switchboard-local.svg" alt="PyPI"></a>
