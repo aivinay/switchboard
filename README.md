@@ -1,10 +1,6 @@
 <h1 align="center">Switchboard</h1>
 
-<p align="center"><strong>A privacy-aware, local-first router across your CLI coding agents and local LLMs.</strong></p>
-
-> **Why this matters now.** In mid-2026, employers started *rationing* AI: Uber capped engineers at $1,500/month per AI coding tool after burning its 2026 AI budget in four months ([Bloomberg](https://www.bloomberg.com/news/articles/2026-06-02/uber-caps-usage-of-ai-tools-like-claude-code-to-cut-costs)); Microsoft is moving its Experiences + Devices org off Claude Code to GitHub Copilot CLI ([Windows Central](https://www.windowscentral.com/microsoft/microsoft-cancels-claude-code-licenses-shifting-developers-to-github-copilot-cli-a-move-likely-driven-by-financial-motives)). A spend cap is a blunt instrument: it throttles your best engineers and does nothing about proprietary code leaving for third-party models. The structural fix is **routing, not rationing** — a thin local-first layer that sends only what's worth it to a premium model, keeps sensitive work on-device, and compresses context.
->
-> **Switchboard is a reference implementation of that pattern.** On a 100-case benchmark it kept **62% of requests off premium agents** (38% premium usage) at near-premium quality, full coverage, and **zero measured privacy leaks** [(see the benchmark below)](#proof). It is not (yet) an enterprise product — it's the smallest honest proof that the pattern works, with a reproducible benchmark to back it.
+<p align="center"><strong>Route each prompt to the right AI agent while keeping private work local.</strong></p>
 
 <p align="center">
   <a href="https://github.com/aivinay/switchboard/actions/workflows/ci.yml"><img src="https://github.com/aivinay/switchboard/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -16,8 +12,8 @@
 
 <p align="center">
   <a href="#get-started-60-seconds">Install</a> ·
+  <a href="#what-it-does">What it does</a> ·
   <a href="#how-it-works">How it works</a> ·
-  <a href="#context-memory-and-tokens">Context</a> ·
   <a href="#proof">Proof</a> ·
   <a href="#privacy">Privacy</a> ·
   <a href="#the-paper">Paper</a> ·
@@ -26,15 +22,23 @@
 
 ![Switchboard automatic routing demo](auto_route_demo.gif)
 
----
+Switchboard is a local-first router for CLI coding agents and local LLMs. It
+decides whether a prompt should stay on your machine with Ollama, go to Codex
+for coding work, or go to Claude Code for heavier reasoning.
 
-> Switchboard routes prompts to the right model while preserving context through
-> local semantic memory and context compression, keeping sensitive work local,
-> and reducing unnecessary premium-model usage.
+Use it when you want to:
 
-It's built for the single-workstation setup where the scarce resources aren't
-dollars-per-token but **subscription quota**, **privacy**, and a pile of
-**heterogeneous agent interfaces**.
+- **Spend premium agent quota where it matters** instead of sending every prompt
+  to the most expensive backend.
+- **Keep sensitive prompts local** with a deterministic privacy floor that
+  learned routing cannot override.
+- **Preserve context across backends** with local semantic memory, redaction,
+  and context compression.
+
+In its 100-case benchmark, Switchboard kept **62% of requests off premium
+agents** while reaching **4.1/5 quality**, **100% answered**, and
+**zero measured privacy leaks in the benchmark**. See [Proof](#proof) for the
+numbers and reproduction bundle.
 
 ## What it does
 
@@ -145,6 +149,24 @@ sensitive prompt to stay leak-free, so its coverage collapses — exactly the ga
 Switchboard closes. <strong>Zero measured leaks in every condition and every run.</strong></sub>
 
 These numbers come from a real-backend benchmark whose full harness travels with the paper's [reproduction bundle on Zenodo](https://doi.org/10.5281/zenodo.20836918).
+
+## Why routing, not rationing
+
+Some employers have begun rationing AI coding-tool spend: Uber reportedly
+capped engineers at $1,500/month per AI tool after burning its 2026 AI budget
+in four months ([Bloomberg](https://www.bloomberg.com/news/articles/2026-06-02/uber-caps-usage-of-ai-tools-like-claude-code-to-cut-costs));
+Microsoft's Experiences + Devices org reportedly moved off Claude Code to
+GitHub Copilot CLI ([Windows Central](https://www.windowscentral.com/microsoft/microsoft-cancels-claude-code-licenses-shifting-developers-to-github-copilot-cli-a-move-likely-driven-by-financial-motives)).
+
+A spend cap controls the invoice, but it does not decide which work actually
+needs a premium model or which prompts should never leave the machine. A better
+pattern is **routing, not blanket rationing**: decide request by request what
+belongs local, what needs a coding agent, and what is worth premium reasoning.
+
+Switchboard is a reference implementation of that pattern for a single
+workstation. It is not yet an enterprise product; it is the smallest honest
+proof that local-first routing can work, with a reproducible benchmark to back
+it.
 
 ## Privacy
 
