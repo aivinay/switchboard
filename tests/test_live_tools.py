@@ -304,6 +304,7 @@ def test_stock_question_grounded_via_yahoo_and_routed_local(tmp_path: Path) -> N
     assert response.backend == "ollama"
     assert "196.45" in adapters["ollama"].prompts[-1]
     assert "Yahoo Finance" in adapters["ollama"].prompts[-1]
+    assert "whether the quote may be delayed" in adapters["ollama"].prompts[-1]
 
 
 def test_news_provider_failure_falls_back_to_honest_local_answer(tmp_path: Path) -> None:

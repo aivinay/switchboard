@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-06-29
+
+### Fixed
+- Made `switchboard eval-real-providers` honor the packaged
+  `personal.yaml` Yahoo Finance default, while keeping empty preferences as
+  env-fallback and explicit `none` as disabled.
+- Built real-provider grounding evals through the configured core-service
+  factory so their live-data tool behavior matches normal CLI requests.
+- Nudged stock quote answers to include the finance source and delayed-data
+  status when a deterministic finance tool grounds the response.
+
 ## [0.2.1] - 2026-06-29
 
 ### Fixed
@@ -64,7 +75,8 @@ First public release.
   bundle (Zenodo, doi:10.5281/zenodo.20836918), not this repository.
 - FastAPI service, CLI (`switchboard`), and a minimal local web UI.
 
-[Unreleased]: https://github.com/aivinay/switchboard/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/aivinay/switchboard/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/aivinay/switchboard/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/aivinay/switchboard/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/aivinay/switchboard/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/aivinay/switchboard/compare/v0.1.0...v0.1.1

@@ -3,10 +3,15 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from switchboard.app.backends.registry import BackendRegistry
 from switchboard.app.core.config import Settings, get_settings
+from switchboard.app.models.personal import PersonalConfig
 from switchboard.app.services.container import build_container
-from switchboard.app.services.finance_providers import default_finance_provider
+from switchboard.app.services.core_factory import build_configured_core_service
+from switchboard.app.services.finance_providers import (
+    FinanceProvider,
+    default_finance_provider,
+    finance_provider_by_name,
+)
 from switchboard.app.services.switchboard_core import SwitchboardCoreService
 from switchboard.app.services.web_search_providers import default_web_search_provider
 from switchboard.app.storage.db import create_db_engine, init_db
@@ -40,11 +45,17 @@ class RealProviderRunner:
         engine = create_db_engine(self.settings.database_url)
         init_db(engine)
         container = build_container(self.settings, engine)
-        return SwitchboardCoreService(
-            registry=BackendRegistry.default(container, cwd=self.cwd),
-            metrics=container.backend_metrics_repository,
-            container=container,
-        )
+        return build_configured_core_service(container, cwd=self.cwd)
+
+    def _finance_provider(self) -> FinanceProvider:
+        configured_name = self._configured_finance_provider_name()
+        if configured_name:
+            return finance_provider_by_name(configured_name)
+        return default_finance_provider()
+
+    def _configured_finance_provider_name(self) -> str:
+        config = PersonalConfig.from_yaml(self.settings.personal_config_path)
+        return config.preferences.finance_provider.strip()
 
     def _web_provider_status(self) -> EvalResult:
         provider = default_web_search_provider()
@@ -62,7 +73,7 @@ class RealProviderRunner:
         return self._pass(case_id, "Web provider", elapsed_seconds=elapsed)
 
     def _finance_provider_status(self, symbol: str) -> EvalResult:
-        provider = default_finance_provider()
+        provider = self._finance_provider()
         case_id = f"provider_finance_{symbol.lower()}"
         if not provider.is_configured():
             return self._not_verified(
@@ -81,7 +92,7 @@ class RealProviderRunner:
         return self._pass(case_id, f"Finance provider {symbol}", elapsed_seconds=elapsed)
 
     def _stock_grounding(self) -> EvalResult:
-        finance = default_finance_provider()
+        finance = self._finance_provider()
         web = default_web_search_provider()
         case_id = "provider_stock_grounding"
         if not finance.is_configured() and not web.is_configured():

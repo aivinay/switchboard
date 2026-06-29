@@ -787,6 +787,11 @@ class SwitchboardCoreService:
         facts: list[str] = []
         if tool_result is not None and tool_result.success:
             facts.append(tool_result.answer)
+            if tool_result.tool_name == "stock_price":
+                facts.append(
+                    "When answering this stock quote, include the finance source "
+                    "and whether the quote may be delayed."
+                )
         needs_live_honesty = False
         if request is not None:
             if request.metadata.get("pass_through_to_model"):
