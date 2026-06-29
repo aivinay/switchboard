@@ -13,6 +13,7 @@ from switchboard.app.models.backends import (
     SwitchboardRequest,
     SwitchboardResponse,
 )
+from switchboard.app.services.finance_providers import StockQuote, UnconfiguredFinanceProvider
 from switchboard.cli import (
     eval_command,
     eval_real_providers_command,
@@ -30,14 +31,36 @@ from switchboard.evals.types import EvalCase, EvalResult, EvalStatus
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def eval_settings(tmp_path: Path) -> Settings:
+def eval_settings(tmp_path: Path, *, personal_config_path: Path | None = None) -> Settings:
     return Settings(
         environment="test",
         database_url=f"sqlite:///{tmp_path / 'evals.db'}",
         models_config_path=str(ROOT / "config" / "models.yaml"),
         policies_config_path=str(ROOT / "config" / "policies.yaml"),
-        personal_config_path=str(ROOT / "config" / "personal.yaml"),
+        personal_config_path=str(personal_config_path or ROOT / "config" / "personal.yaml"),
     )
+
+
+def live_provider_config(
+    tmp_path: Path,
+    *,
+    finance_provider: str = "none",
+    news_provider: str = "none",
+) -> Path:
+    personal_config = tmp_path / "personal_eval.yaml"
+    personal_config.write_text(
+        f"""
+preferences:
+  router_mode: "rules"
+  tool_dispatcher_enabled: false
+  sensitivity_escalator_enabled: false
+  semantic_memory_enabled: false
+  finance_provider: "{finance_provider}"
+  news_provider: "{news_provider}"
+""",
+        encoding="utf-8",
+    )
+    return personal_config
 
 
 def test_eval_datasets_have_unique_case_ids() -> None:
@@ -321,11 +344,117 @@ def test_real_provider_eval_marks_missing_providers_not_verified(
     monkeypatch.delenv("SWITCHBOARD_FINANCE_PROVIDER", raising=False)
     monkeypatch.delenv("ALPHA_VANTAGE_API_KEY", raising=False)
 
-    report = RealProviderRunner(settings=eval_settings(tmp_path)).run()
+    report = RealProviderRunner(
+        settings=eval_settings(
+            tmp_path,
+            personal_config_path=live_provider_config(tmp_path),
+        )
+    ).run()
 
     assert report.failed == 0
     assert report.not_verified == report.total
     assert all(result.status == EvalStatus.NOT_VERIFIED for result in report.results)
+
+
+def test_real_provider_eval_uses_personal_finance_provider(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    monkeypatch.delenv("SWITCHBOARD_FINANCE_PROVIDER", raising=False)
+    calls: list[str] = []
+
+    class FakeFinanceProvider:
+        def is_configured(self) -> bool:
+            return True
+
+        def get_quote(self, symbol: str) -> StockQuote:
+            return StockQuote(
+                symbol=symbol.upper(),
+                price=123.45,
+                currency="USD",
+                source="Fake Finance",
+            )
+
+    def fake_finance_provider_by_name(name: str) -> FakeFinanceProvider:
+        calls.append(name)
+        return FakeFinanceProvider()
+
+    monkeypatch.setattr(
+        "switchboard.evals.real_providers.finance_provider_by_name",
+        fake_finance_provider_by_name,
+    )
+
+    runner = RealProviderRunner(
+        settings=eval_settings(
+            tmp_path,
+            personal_config_path=live_provider_config(tmp_path, finance_provider="yahoo"),
+        )
+    )
+    result = runner._finance_provider_status("NOW")
+
+    assert result.status == EvalStatus.PASS
+    assert calls == ["yahoo"]
+
+
+def test_real_provider_eval_explicit_none_disables_env_finance_provider(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    monkeypatch.setenv("SWITCHBOARD_FINANCE_PROVIDER", "yahoo")
+    calls: list[str] = []
+
+    def fake_finance_provider_by_name(name: str):  # noqa: ANN001
+        calls.append(name)
+        return UnconfiguredFinanceProvider()
+
+    monkeypatch.setattr(
+        "switchboard.evals.real_providers.finance_provider_by_name",
+        fake_finance_provider_by_name,
+    )
+
+    runner = RealProviderRunner(
+        settings=eval_settings(
+            tmp_path,
+            personal_config_path=live_provider_config(tmp_path, finance_provider="none"),
+        )
+    )
+    result = runner._finance_provider_status("NOW")
+
+    assert result.status == EvalStatus.NOT_VERIFIED
+    assert calls == ["none"]
+
+
+def test_real_provider_eval_empty_finance_config_uses_env_fallback(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:  # noqa: ANN001
+    monkeypatch.setenv("SWITCHBOARD_FINANCE_PROVIDER", "yahoo")
+    calls: list[str] = []
+
+    def fake_get_quote(self, symbol: str) -> StockQuote:  # noqa: ANN001
+        calls.append(symbol)
+        return StockQuote(
+            symbol=symbol.upper(),
+            price=123.45,
+            currency="USD",
+            source="Fake Finance",
+        )
+
+    monkeypatch.setattr(
+        "switchboard.app.services.finance_providers.YahooFinanceProvider.get_quote",
+        fake_get_quote,
+    )
+
+    runner = RealProviderRunner(
+        settings=eval_settings(
+            tmp_path,
+            personal_config_path=live_provider_config(tmp_path, finance_provider=""),
+        )
+    )
+    result = runner._finance_provider_status("NOW")
+
+    assert result.status == EvalStatus.PASS
+    assert calls == ["NOW"]
 
 
 def test_eval_real_providers_command_does_not_fail_when_providers_missing(
@@ -340,7 +469,10 @@ def test_eval_real_providers_command_does_not_fail_when_providers_missing(
     monkeypatch.setattr(
         "switchboard.cli.RealProviderRunner",
         lambda *, timeout_s=120: RealProviderRunner(
-            settings=eval_settings(tmp_path),
+            settings=eval_settings(
+                tmp_path,
+                personal_config_path=live_provider_config(tmp_path),
+            ),
             timeout_s=timeout_s,
         ),
     )
