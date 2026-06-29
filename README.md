@@ -1,6 +1,6 @@
 <h1 align="center">Switchboard</h1>
 
-<p align="center"><strong>Route each prompt to the right AI agent while keeping private work local.</strong></p>
+<p align="center"><strong>Small work local. Hard work premium. Secrets stay home.</strong></p>
 
 <p align="center">
   <a href="https://github.com/aivinay/switchboard/actions/workflows/ci.yml"><img src="https://github.com/aivinay/switchboard/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -22,9 +22,9 @@
 
 ![Switchboard automatic routing demo](auto_route_demo.gif)
 
-Switchboard is a local-first router for CLI coding agents and local LLMs. It
-decides whether a prompt should stay on your machine with Ollama, go to Codex
-for coding work, or go to Claude Code for heavier reasoning.
+Switchboard is AI traffic control for coding agents. It routes each prompt
+across Ollama, Codex, and Claude Code before you spend premium quota or send
+sensitive context off-device.
 
 Use it when you want to:
 
