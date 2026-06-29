@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-29
+
+### Changed
+- Unified the public CLI routing path: `switchboard route`, bare
+  `switchboard ask`, and `switchboard ask --backend auto` now use the same
+  Switchboard Core routing behavior, with `route` acting as a no-model-call
+  preview.
+- Removed legacy personal-router-only flags from public `route` and `ask`
+  commands so unsupported options fail clearly instead of being ignored.
+- Rejected manual catalogue IDs such as `manual/codex` on the callable core
+  CLI path; users should select callable backends such as `codex`,
+  `claude-code`, or `ollama`.
+
+### Fixed
+- Preserved forced backend/model choices in `route` next-step guidance,
+  including the `--force-model ollama` backend alias.
+- Updated README framing and Zenodo DOI references to the current v2 record.
+
 ## [0.1.1] - 2026-06-24
 
 ### Fixed
@@ -36,5 +54,7 @@ First public release.
   bundle (Zenodo, doi:10.5281/zenodo.20836918), not this repository.
 - FastAPI service, CLI (`switchboard`), and a minimal local web UI.
 
-[Unreleased]: https://github.com/aivinay/switchboard/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/aivinay/switchboard/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/aivinay/switchboard/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/aivinay/switchboard/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/aivinay/switchboard/releases/tag/v0.1.0
