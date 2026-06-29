@@ -7,7 +7,7 @@
 
 <p align="center"><strong>Local-first prompt router for Codex, Claude Code, and Ollama.</strong></p>
 
-<p align="center">On a 100-case benchmark: 62% of prompts stay off premium agents · 4.1/5 quality · 0 measured privacy leaks.</p>
+<p align="center">On a 100-case benchmark: 62% of prompts stay off premium agents · >4 quality vs 4.6 premium · 0 measured privacy leaks.</p>
 
 <p align="center">
   <a href="https://github.com/aivinay/switchboard/actions/workflows/ci.yml"><img src="https://github.com/aivinay/switchboard/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -33,9 +33,9 @@
 Switchboard wraps the CLI tools you already use — no separate service, no proxy, no resold API access — and routes each prompt with deterministic rules before any learned classifier runs.
 
 In its 100-case benchmark, Switchboard kept **62% of requests off premium
-agents** while reaching **4.1/5 quality**, **100% answered**, and
-**zero measured privacy leaks in the benchmark**. See [Proof](#proof) for the
-numbers and reproduction bundle.
+agents** while reaching **>4 quality** against a **4.6 premium baseline**,
+with **100% answered** and **zero measured privacy leaks in the benchmark**.
+See [Proof](#proof) for the numbers and reproduction bundle.
 
 Use it when you want to:
 
