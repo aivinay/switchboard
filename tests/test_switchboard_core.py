@@ -15,6 +15,7 @@ from switchboard.app.core.config import Settings
 from switchboard.app.models.backends import (
     BackendCostType,
     BackendInfo,
+    BackendRouteDecision,
     SwitchboardRequest,
     SwitchboardResponse,
     backend_display_name,
@@ -35,7 +36,9 @@ from switchboard.cli import (
     backend_error_hint,
     backends_command,
     doctor_command,
+    make_parser,
     metrics_command,
+    route_command,
     train_dispatcher_command,
     train_router_command,
     train_sensitivity_command,
@@ -942,6 +945,321 @@ def test_cli_ask_backend_flag_uses_core_service(monkeypatch, capsys) -> None:
     assert "done" in output
     assert "Backend: codex" in output
     assert "Routing: User selected backend codex." in output
+
+
+def test_cli_ask_without_backend_defaults_to_core_auto(monkeypatch, capsys) -> None:
+    class FakeCoreService:
+        def ask(  # noqa: ANN001
+            self,
+            prompt,
+            *,
+            backend,
+            project,
+            model,
+            timeout_s,
+            metadata=None,
+            session_id=None,
+            new_session=False,
+        ):
+            assert backend is None
+            assert prompt == "Debug this repo"
+            assert model is None
+            assert session_id is None
+            assert new_session is False
+            return SwitchboardResponse(
+                request_id="req_cli_auto",
+                backend="codex",
+                content="done",
+                stdout="done",
+                latency_ms=5,
+                success=True,
+                routing_reason="Detected coding/debugging task; prefers Codex.",
+                cost_type=BackendCostType.SUBSCRIPTION,
+                estimated_cost_usd=0.0,
+            )
+
+    monkeypatch.setattr(
+        "switchboard.cli.build_core_service",
+        lambda **kwargs: FakeCoreService(),
+    )
+
+    ask_command(
+        argparse.Namespace(
+            prompt="Debug this repo",
+            project=None,
+            backend=None,
+            timeout=3,
+            force_model=None,
+            show_metadata=False,
+            no_cache=True,
+            show_prompt=False,
+            strict=False,
+            allow_cloud_once=False,
+            override_reason=None,
+            baseline=None,
+        )
+    )
+
+    output = capsys.readouterr().out
+    assert "Calling backend auto" in output
+    assert "done" in output
+    assert "Backend: codex" in output
+    assert "Routing: Detected coding/debugging task; prefers Codex." in output
+
+
+def test_cli_route_uses_core_route_preview(monkeypatch, capsys) -> None:
+    class FakeCoreService:
+        def preview_route(  # noqa: ANN001
+            self,
+            prompt,
+            *,
+            backend,
+            project,
+            model,
+            metadata,
+        ):
+            assert prompt == "Debug this repo"
+            assert backend is None
+            assert project is None
+            assert model is None
+            assert metadata == {"surface": "cli_route"}
+            return BackendRouteDecision(
+                backend="codex",
+                selected_backend="codex",
+                display_model="Codex",
+                route_type="coding",
+                routing_reason="Detected coding/debugging task; prefers Codex.",
+            )
+
+    monkeypatch.setattr(
+        "switchboard.cli.build_core_service",
+        lambda **kwargs: FakeCoreService(),
+    )
+
+    route_command(
+        argparse.Namespace(
+            prompt="Debug this repo",
+            project=None,
+            no_cache=True,
+            show_prompt=False,
+            debug=False,
+            show_reasons=False,
+            force_model=None,
+            allow_cloud_once=False,
+            override_reason=None,
+            baseline=None,
+        )
+    )
+
+    output = capsys.readouterr().out
+    assert "Recommendation: Codex" in output
+    assert "Backend: codex" in output
+    assert "Route type: coding" in output
+    assert "Routing: Detected coding/debugging task; prefers Codex." in output
+
+
+@pytest.mark.parametrize(
+    ("force_model", "expected_backend", "expected_model", "expected_next_step"),
+    [
+        (
+            "claude-code",
+            "claude-code",
+            None,
+            "Next step: switchboard ask --backend claude-code '<same prompt>'",
+        ),
+        (
+            "ollama/qwen3:8b",
+            "ollama",
+            "ollama/qwen3:8b",
+            (
+                "Next step: switchboard ask --backend ollama "
+                "--force-model ollama/qwen3:8b '<same prompt>'"
+            ),
+        ),
+        (
+            "ollama",
+            "ollama",
+            None,
+            "Next step: switchboard ask --backend ollama '<same prompt>'",
+        ),
+    ],
+)
+def test_cli_route_next_step_preserves_forced_choice(
+    force_model: str,
+    expected_backend: str,
+    expected_model: str | None,
+    expected_next_step: str,
+    monkeypatch,
+    capsys,
+) -> None:
+    class FakeCoreService:
+        def preview_route(  # noqa: ANN001
+            self,
+            prompt,
+            *,
+            backend,
+            project,
+            model,
+            metadata,
+        ):
+            assert backend == expected_backend
+            assert model == expected_model
+            return BackendRouteDecision(
+                backend=expected_backend,
+                selected_backend=expected_backend,
+                display_model=backend_display_name(expected_backend),
+                route_type="forced",
+                routing_reason=f"User selected backend {expected_backend}.",
+                forced_backend=True,
+            )
+
+    monkeypatch.setattr(
+        "switchboard.cli.build_core_service",
+        lambda **kwargs: FakeCoreService(),
+    )
+
+    route_command(
+        argparse.Namespace(
+            prompt="Debug this repo",
+            project=None,
+            show_prompt=False,
+            debug=False,
+            show_reasons=False,
+            force_model=force_model,
+        )
+    )
+
+    output = capsys.readouterr().out
+    assert expected_next_step in output
+
+
+def test_cli_ask_force_model_ollama_forces_backend_without_model(monkeypatch, capsys) -> None:
+    class FakeCoreService:
+        def ask(  # noqa: ANN001
+            self,
+            prompt,
+            *,
+            backend,
+            project,
+            model,
+            timeout_s,
+            metadata=None,
+            session_id=None,
+            new_session=False,
+        ):
+            assert backend == "ollama"
+            assert model is None
+            return SwitchboardResponse(
+                request_id="req_cli_ollama",
+                backend="ollama",
+                content="done",
+                stdout="done",
+                latency_ms=5,
+                success=True,
+                routing_reason="User selected backend ollama.",
+                cost_type=BackendCostType.LOCAL,
+                estimated_cost_usd=0.0,
+            )
+
+    monkeypatch.setattr(
+        "switchboard.cli.build_core_service",
+        lambda **kwargs: FakeCoreService(),
+    )
+
+    ask_command(
+        argparse.Namespace(
+            prompt="Debug this repo",
+            project=None,
+            backend=None,
+            timeout=3,
+            force_model="ollama",
+            show_metadata=False,
+        )
+    )
+
+    output = capsys.readouterr().out
+    assert "Backend: ollama" in output
+    assert "Success: True" in output
+
+
+def test_cli_route_rejects_manual_catalogue_ids() -> None:
+    with pytest.raises(SystemExit, match="manual subscription catalogue entry"):
+        route_command(
+            argparse.Namespace(
+                prompt="Debug this repo",
+                project=None,
+                show_prompt=False,
+                debug=False,
+                show_reasons=False,
+                force_model="manual/codex",
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["route", "prompt", "--no-cache"],
+        ["route", "prompt", "--allow-cloud-once"],
+        ["route", "prompt", "--override-reason", "because"],
+        ["route", "prompt", "--baseline", "manual/claude-web"],
+        ["ask", "prompt", "--no-cache"],
+        ["ask", "prompt", "--show-prompt"],
+        ["ask", "prompt", "--strict"],
+        ["ask", "prompt", "--allow-cloud-once"],
+        ["ask", "prompt", "--override-reason", "because"],
+        ["ask", "prompt", "--baseline", "manual/claude-web"],
+    ],
+)
+def test_public_core_cli_rejects_personal_only_flags(argv: list[str]) -> None:
+    with pytest.raises(SystemExit):
+        make_parser().parse_args(argv)
+
+
+def test_core_route_preview_and_auto_ask_choose_same_backend(tmp_path: Path) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama"),
+                "codex": FakeAdapter("codex", cost_type=BackendCostType.SUBSCRIPTION),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+
+    prompt = "Debug this repo test failure"
+    preview = service.preview_route(prompt)
+    response = service.ask(prompt, backend=None)
+
+    assert preview.backend == "codex"
+    assert response.backend == preview.backend
+
+
+def test_core_route_preview_keeps_sensitive_content_local(tmp_path: Path) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama"),
+                "codex": FakeAdapter("codex", cost_type=BackendCostType.SUBSCRIPTION),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+
+    decision = service.preview_route(
+        "My SSN is 123-45-6789. Review this architecture for reliability."
+    )
+
+    assert decision.backend == "ollama"
+    assert "Private mode detected sensitive content" in decision.routing_reason
 
 
 def test_backends_command_prints_availability(monkeypatch, capsys) -> None:

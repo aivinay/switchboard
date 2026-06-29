@@ -31,14 +31,14 @@ The next step line should make the operational state obvious:
 - private mode blocked cloud routing
 - ambiguous prompt was kept local and needs more detail if the answer is weak
 
-For manual premium recommendations:
+To see the exact prompt being classified during a route preview:
 
 ```bash
 switchboard route "Design a database schema and evaluate scaling risk." --show-prompt
 ```
 
-`--show-prompt` displays the ready-to-paste prompt only when the recommendation is a
-manual subscription tool such as Claude, ChatGPT, or Codex.
+`--show-prompt` prints the raw prompt after the backend preview; it does not call a
+model.
 
 Raw internal reason codes are hidden by default to keep the output readable:
 
@@ -47,25 +47,19 @@ switchboard route "Summarise this email." --debug
 switchboard route "Summarise this email." --show-reasons
 ```
 
-Use `--no-cache` when comparing fresh routing behavior:
-
-```bash
-switchboard route "Summarise this email." --no-cache
-```
-
 ## Ask
 
-Use bare `ask` when you want the personal route/call surface to call an allowed
-mock/local/cloud adapter:
+Use bare `ask` when you want Switchboard to route and call through the core backend
+path:
 
 ```bash
 switchboard ask "Rewrite this note to be clearer."
 ```
 
-With Ollama enabled, `ask` uses real local models for everyday answers. If Ollama is
+With Ollama enabled, `ask` can use real local models for everyday answers. If Ollama is
 unavailable, the fallback answer is explicitly labeled as mock/demo output. If the best
-route is manual or scarce, the CLI prints the recommendation instead of calling the
-provider. Manual subscription providers are always recommendation-only.
+route is Codex or Claude Code and the CLI is installed and authenticated, Switchboard
+calls that backend directly, still subject to private-mode and availability checks.
 
 For truth/current-info prompts, Phase 2 first uses a specialized tool, then configured web
 search, then model pass-through. Normal chat, emotional conversations, coding,
@@ -89,9 +83,10 @@ too thin for the task.
 
 ## Stateful Ask
 
-Use `ask --backend auto` when you want the core session path: shared context across
-backend switches, semantic-memory retrieval, context compression, backend metrics, and
-tool-grounded context all run there.
+Bare `ask` uses the core session path by default: shared context across backend
+switches, semantic-memory retrieval, context compression, backend metrics, and
+tool-grounded context all run there. `--backend auto` is the explicit form of the
+same behavior.
 
 ```bash
 switchboard ask --backend auto --new-session "Remember: keep private notes local."
@@ -101,7 +96,7 @@ switchboard ask --backend auto --session <session_id> --memory --show-metadata \
 
 The UI uses this stateful core path by default. The CLI should keep the session ID,
 display model, route, and user-facing answer easy to read while hiding raw context blocks
-unless `--show-metadata` or `--show-prompt` was requested.
+unless `--show-metadata` was requested.
 
 ## Usage And Feedback
 

@@ -107,8 +107,8 @@ them, everything routes locally. See [docs/usage.md](docs/usage.md).
 
 Switchboard has two user-facing CLI surfaces:
 
-- `switchboard route ...` and bare `switchboard ask ...` use the personal local-first route/call workflow.
-- The web UI and `switchboard ask --backend auto ...` use the stateful core workflow: shared sessions, model switching, semantic-memory retrieval, context-boundary compression, and backend telemetry all run on the same path.
+- `switchboard route ...` previews the same core backend decision without calling a model.
+- The web UI, bare `switchboard ask ...`, and `switchboard ask --backend auto ...` use the stateful core workflow: shared sessions, model switching, semantic-memory retrieval, context-boundary compression, and backend telemetry all run on the same path.
 
 Example stateful CLI session:
 

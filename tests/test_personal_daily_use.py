@@ -22,10 +22,10 @@ from switchboard.app.services.local_runtime import (
 )
 from switchboard.app.services.personal_switchboard import PersonalSwitchboardService
 from switchboard.cli import (
-    ask_command,
     doctor_command,
     feedback_command,
     loaded_models_command,
+    personal_ask_command,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -561,7 +561,7 @@ def test_cli_ask_output_distinguishes_ollama_provider(
     monkeypatch.setattr(OllamaProviderAdapter, "complete_chat", fake_complete_chat)
     get_settings.cache_clear()
 
-    ask_command(
+    personal_ask_command(
         cli_args(
             "Summarise this email in three bullets: I cannot attend tomorrow's meeting."
         )
@@ -614,7 +614,7 @@ def test_cli_ask_show_metadata_includes_operational_details(
     monkeypatch.setattr(OllamaProviderAdapter, "complete_chat", fake_complete_chat)
     get_settings.cache_clear()
 
-    ask_command(
+    personal_ask_command(
         cli_args(
             "Summarise this email in three bullets: I cannot attend tomorrow's meeting.",
             show_metadata=True,
@@ -637,7 +637,7 @@ def test_cli_ask_output_distinguishes_mock_provider(
     monkeypatch.setenv("ICP_DATABASE_URL", f"sqlite:///{tmp_path / 'cli_mock.db'}")
     get_settings.cache_clear()
 
-    ask_command(cli_args("Summarise this email in three bullets."))
+    personal_ask_command(cli_args("Summarise this email in three bullets."))
 
     output = capsys.readouterr().out
     assert "Demo mock response only from mock/small" in output
@@ -661,7 +661,7 @@ def test_cli_ask_manual_recommendation_includes_request_id(
     monkeypatch.setenv("ICP_DATABASE_URL", f"sqlite:///{tmp_path / 'cli_manual.db'}")
     get_settings.cache_clear()
 
-    ask_command(
+    personal_ask_command(
         cli_args(
             "Create a multi-step strategy for launching a local-first developer tool.",
             force_model="manual/claude-web",
@@ -791,10 +791,8 @@ def test_five_bullet_short_source_with_speculative_padding_warns(
     assert "switchboard ask '<same prompt>' --force-model ollama/qwen3:8b" in body[
         "suggested_next_step"
     ]
-    manual_suggestion = (
-        "switchboard route '<same prompt>' --force-model manual/claude-web --show-prompt"
-    )
-    assert manual_suggestion in body["suggested_next_step"]
+    premium_suggestion = "switchboard ask '<same prompt>' --backend claude-code"
+    assert premium_suggestion in body["suggested_next_step"]
 
 
 def test_requested_json_with_invalid_json_warns(

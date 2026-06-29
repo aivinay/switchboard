@@ -9,28 +9,24 @@ switchboard savings --days 7
 switchboard loaded-models
 ```
 
-## Route, Ask, And Stateful Ask
+## Route And Ask
 
-`switchboard route` recommends a route without calling a model:
+`switchboard route` previews the backend decision without calling a model:
 
 ```bash
 switchboard route "refactor the auth module and add tests"
-switchboard route "review this architecture" --show-prompt
+switchboard route "review this architecture"
 ```
 
-Bare `switchboard ask` uses the personal local-first route/call workflow. It is useful
-for quick local/model calls, quality warnings, usage accounting, and manual premium
-recommendations:
+The preview runs the same core pre-routing checks as `ask`, including deterministic
+tool grounding when configured, but it does not call Ollama, Codex, or Claude Code.
+
+Bare `switchboard ask` uses the same stateful core path as `switchboard ask --backend auto`.
+That path carries context across Ollama, Codex, Claude Code, and tools. The web UI uses
+it automatically:
 
 ```bash
 switchboard ask "Summarise this customer email in three bullets."
-```
-
-The stateful core path is the one that carries context across Ollama, Codex, Claude Code,
-and tools. The web UI uses it automatically. In the CLI, pass `--backend auto` or a
-specific backend:
-
-```bash
 switchboard ask --backend auto --new-session "Remember: use local models for private notes."
 switchboard ask --backend auto --session <session_id> --memory "What preference did I give you?"
 switchboard ask --backend codex --session <session_id> "Apply that preference to this repo task."
@@ -63,20 +59,19 @@ switchboard loaded-models
 ollama ps
 ```
 
-After a personal `ask`, Switchboard prints routing metadata:
+After `ask`, Switchboard prints backend metadata:
 
 ```text
 ---
-Model: ollama/llama3.2:3b
-Provider: Ollama
-Route: local model
-Premium saved: 1.0 unit(s)
+Backend: codex
+Model: gpt-5.5
+Success: True
+Cost type: subscription
 Request ID: req_...
 ```
 
-`Model: ollama/...` with `Route: local model` means a local Ollama model produced the
-answer. `Route: demo mock` means the built-in mock provider was used. A manual route
-means Switchboard produced a recommendation and did not call the premium tool.
+`Backend: ollama` means a local Ollama model produced the answer. `Backend: codex` or
+`Backend: claude-code` means the installed, authenticated CLI backend was called.
 
 Use the request ID for feedback, escalation, or support.
 
@@ -100,10 +95,9 @@ matches.
 
 ## Quality Warnings
 
-Switchboard checks a few simple format promises after personal `ask`, such as requested
+Switchboard checks a few simple format promises on the personal API path, such as requested
 bullet counts, JSON, tables, and one-sentence answers. Source-grounded summaries get
-extra checks for padded or speculative bullets. If the response does not appear to match
-the requested format or source, the CLI prints a warning and concrete next steps.
+extra checks for padded or speculative bullets.
 
 For summaries, local models are instructed to:
 
@@ -116,12 +110,11 @@ Examples:
 
 ```bash
 switchboard ask "Give me exactly three bullets: ..." --force-model ollama/qwen3:8b
-switchboard route "Create a board-level risk analysis" --force-model manual/claude-web --show-prompt
+switchboard route "Create a board-level risk analysis" --force-model claude-code
 ```
 
-The first retry stays local with a stronger Ollama model. The second creates a
-ready-to-paste manual premium prompt; Switchboard does not automate Claude, ChatGPT, or
-Codex web sessions.
+The first retry stays local with a stronger Ollama model. The second previews Claude
+Code as the backend without calling it.
 
 ## Feedback
 
