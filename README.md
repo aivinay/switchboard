@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-<p align="center"><strong>Route each prompt to the cheapest safe AI agent without losing context.</strong></p>
+<p align="center"><strong>Simple work local. Hard work premium. Secrets stay home.</strong></p>
 
 <p align="center">Switchboard sends each prompt to Ollama, Codex, or Claude Code, keeps sensitive prompts local by default, and shows the routing decision.</p>
 
