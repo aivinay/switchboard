@@ -1,7 +1,7 @@
 <h1 align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/switchboard-wordmark-dark.svg">
-    <img src="assets/switchboard-wordmark.svg" alt="Switchboard" width="760">
+    <img src="assets/switchboard-wordmark.svg" alt="Switchboard" width="920">
   </picture>
 </h1>
 
