@@ -1,6 +1,8 @@
 <h1 align="center">Switchboard</h1>
 
-<p align="center"><strong>Small work local. Hard work premium. Secrets stay home.</strong></p>
+<p align="center"><strong>Local-first prompt router for Codex, Claude Code, and Ollama.</strong></p>
+
+<p align="center">On a 100-case benchmark: 62% of prompts stay off premium agents · 4.1/5 quality · 0 measured privacy leaks.</p>
 
 <p align="center">
   <a href="https://github.com/aivinay/switchboard/actions/workflows/ci.yml"><img src="https://github.com/aivinay/switchboard/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -12,9 +14,8 @@
 
 <p align="center">
   <a href="#get-started-60-seconds">Install</a> ·
-  <a href="#what-it-does">What it does</a> ·
-  <a href="#how-it-works">How it works</a> ·
   <a href="#proof">Proof</a> ·
+  <a href="#how-it-works">How it works</a> ·
   <a href="#privacy">Privacy</a> ·
   <a href="#the-paper">Paper</a> ·
   <a href="docs/">Docs</a>
@@ -22,9 +23,14 @@
 
 ![Switchboard automatic routing demo](auto_route_demo.gif)
 
-Switchboard is AI traffic control for coding agents. It routes each prompt
-across Ollama, Codex, and Claude Code before you spend premium quota or send
-sensitive context off-device.
+<p align="center"><em>Live automatic routing: local Ollama → Codex → Claude Code, decided per prompt.</em></p>
+
+Switchboard wraps the CLI tools you already use — no separate service, no proxy, no resold API access — and routes each prompt with deterministic rules before any learned classifier runs.
+
+In its 100-case benchmark, Switchboard kept **62% of requests off premium
+agents** while reaching **4.1/5 quality**, **100% answered**, and
+**zero measured privacy leaks in the benchmark**. See [Proof](#proof) for the
+numbers and reproduction bundle.
 
 Use it when you want to:
 
@@ -32,13 +38,7 @@ Use it when you want to:
   to the most expensive backend.
 - **Keep sensitive prompts local** with a deterministic privacy floor that
   learned routing cannot override.
-- **Preserve context across backends** with local semantic memory, redaction,
-  and context compression.
-
-In its 100-case benchmark, Switchboard kept **62% of requests off premium
-agents** while reaching **4.1/5 quality**, **100% answered**, and
-**zero measured privacy leaks in the benchmark**. See [Proof](#proof) for the
-numbers and reproduction bundle.
+- **Switch backends mid-session without losing context** — shared session history, semantic memory, and redaction travel with you across Ollama, Codex, and Claude Code.
 
 ## What it does
 
@@ -150,7 +150,7 @@ Switchboard closes. <strong>Zero measured leaks in every condition and every run
 
 These numbers come from a real-backend benchmark whose full harness travels with the paper's [reproduction bundle on Zenodo](https://doi.org/10.5281/zenodo.20836918).
 
-## Why routing, not rationing
+## Context: why this exists (Uber, Microsoft, 2026)
 
 Some employers have begun rationing AI coding-tool spend: Uber reportedly
 capped engineers at $1,500/month per AI tool after burning its 2026 AI budget
