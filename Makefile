@@ -36,4 +36,4 @@ typecheck:
 demo-personal:
 	bash scripts/demo_personal.sh
 
-check: lint test
+check: lint typecheck test

@@ -664,7 +664,8 @@ Switchboard Demo Checklist
    Expected: TimeTool grounds the selected model; the model gives the final answer.
 
    Weather in India
-   Expected: Auto selects a model and passes the question through without a provider warning.
+   Expected: Without a configured weather/search path, Switchboard stays honest
+   instead of inventing live weather.
 
 4. Show shared session context:
    Remember: Switchboard routes between Codex, Claude, and Ollama.
