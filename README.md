@@ -1,19 +1,13 @@
 <h1 align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/switchboard-wordmark-dark.svg">
-    <img src="assets/switchboard-wordmark.svg" alt="Switchboard" width="780">
+    <img src="assets/switchboard-wordmark.svg" alt="Switchboard. Simple work local. Hard work premium. Secrets stay home." width="780">
   </picture>
 </h1>
 
-<p align="center"><strong>Simple work local. Hard work premium. Secrets stay home.</strong></p>
-
 <p align="center">
-  62% fewer premium-agent calls · 4.1/5 quality vs 4.6/5 always-premium · 0 benchmark leaks observed
+  <strong>62% fewer premium-agent calls · 4.1/5 quality vs 4.6/5 always-premium · 0 benchmark leaks observed</strong>
 </p>
-
-![Switchboard automatic routing demo](auto_route_demo.gif)
-
-<p align="center"><em>One session, three backends: local by default, Codex for code, Claude Code for reasoning.</em></p>
 
 <p align="center">
   <a href="https://github.com/aivinay/switchboard/actions/workflows/ci.yml"><img src="https://github.com/aivinay/switchboard/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -31,6 +25,12 @@
   <a href="#the-paper">Paper</a> ·
   <a href="docs/">Docs</a>
 </p>
+
+---
+
+![Switchboard automatic routing demo](auto_route_demo.gif)
+
+<p align="center"><em>One session, three backends: local by default, Codex for code, Claude Code for reasoning.</em></p>
 
 Switchboard wraps the CLI tools you already use — no separate service, no proxy, no resold API access — and routes each prompt with deterministic rules before any learned classifier runs.
 

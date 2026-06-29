@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="150" viewBox="0 0 960 150" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="210" viewBox="0 0 960 210" role="img" aria-labelledby="title desc">
   <title id="title">Switchboard</title>
-  <desc id="desc">Switchboard wordmark with simple routing lines.</desc>
-  <rect width="960" height="150" fill="none"/>
+  <desc id="desc">Switchboard wordmark. Simple work local. Hard work premium. Secrets stay home.</desc>
+  <rect width="960" height="210" fill="none"/>
   <g fill="none" stroke="#14b8a6" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity="0.95">
     <path d="M32 55h54c28 0 28 40 56 40h42"/>
     <path d="M32 95h54c28 0 28-40 56-40h42"/>
@@ -17,6 +17,15 @@
     font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif"
     font-size="92"
     font-weight="850"
-    letter-spacing="-1"
+    letter-spacing="0"
   >Switchboard</text>
+  <text
+    x="480"
+    y="174"
+    fill="#57606a"
+    font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif"
+    font-size="25"
+    font-weight="750"
+    text-anchor="middle"
+  >Simple work local. Hard work premium. Secrets stay home.</text>
 </svg>
