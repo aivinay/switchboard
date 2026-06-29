@@ -30,6 +30,10 @@ from switchboard.app.services.news_tool import (
     NewsTool,
     news_provider_by_name,
 )
+from switchboard.app.services.provider_status import (
+    finance_provider_status,
+    news_provider_status,
+)
 from switchboard.app.services.switchboard_core import SwitchboardCoreService
 from switchboard.app.services.tools import ToolRegistry
 from switchboard.app.storage.db import create_db_engine, init_db
@@ -179,6 +183,35 @@ def test_news_tool_failure_passes_through() -> None:
 def test_news_provider_factory() -> None:
     assert isinstance(news_provider_by_name("google_news_rss"), GoogleNewsRssProvider)
     assert news_provider_by_name("").is_configured() is False
+
+
+def test_provider_status_empty_config_matches_env_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("SWITCHBOARD_FINANCE_PROVIDER", "yahoo")
+    monkeypatch.setenv("SWITCHBOARD_NEWS_PROVIDER", "google_news_rss")
+
+    assert finance_provider_status("") == ("yahoo", True)
+    assert news_provider_status("") == ("google_news_rss", True)
+
+
+def test_provider_status_explicit_none_disables_env_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("SWITCHBOARD_FINANCE_PROVIDER", "yahoo")
+    monkeypatch.setenv("SWITCHBOARD_NEWS_PROVIDER", "google_news_rss")
+
+    assert finance_provider_status("none")[1] is False
+    assert news_provider_status("none")[1] is False
+
+
+def test_tool_registry_availability_reflects_configured_live_tools() -> None:
+    availability = ToolRegistry(
+        news_tool=NewsTool(MockNewsProvider()),
+        stock_price_tool=StockPriceTool(
+            YahooFinanceProvider(fetch_json=lambda symbol: YAHOO_PAYLOAD)
+        ),
+    ).availability()
+
+    assert availability["news_tool"] == "available"
+    assert availability["live_latest_info_tool"] == "available"
+    assert availability["stock_price_tool"] == "available"
 
 
 # ---------------------------------------------------------------------------

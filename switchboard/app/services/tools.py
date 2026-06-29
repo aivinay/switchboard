@@ -314,6 +314,12 @@ class ToolRegistry:
             "news_tool": (
                 "available" if self.news_tool.is_configured() else "not configured"
             ),
-            "weather_tool": "not configured",
-            "live_latest_info_tool": "not configured",
+            "weather_tool": (
+                "available" if self.web_search_tool.is_configured() else "not configured"
+            ),
+            "live_latest_info_tool": (
+                "available"
+                if self.news_tool.is_configured() or self.web_search_tool.is_configured()
+                else "not configured"
+            ),
         }
