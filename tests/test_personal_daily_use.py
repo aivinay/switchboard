@@ -167,6 +167,7 @@ def test_default_personal_config_enables_ollama() -> None:
     assert config.provider_enabled("ollama")
     assert config.local_runtime.performance_mode == "balanced"
     assert config.local_runtime.max_loaded_models == 2
+    assert config.preferences.claude_code_web_search is True
 
 
 def test_requested_bullet_count_detection_variants() -> None:

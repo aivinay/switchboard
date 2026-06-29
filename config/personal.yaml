@@ -40,8 +40,9 @@ preferences:
   semantic_memory_top_k: 3
   embedding_model: "nomic-embed-text"
   # Allow Claude Code to use its WebSearch tool for live-data questions
-  # (pre-approved, uses your Claude subscription's search). Off by default.
-  claude_code_web_search: false
+  # (pre-approved, uses your Claude subscription's search). Enabled in the
+  # starter config; set false for local-only live-data fallback.
+  claude_code_web_search: true
   # Live-data grounding (keyless providers; informational, not advice).
   finance_provider: "yahoo"
   news_provider: "google_news_rss"

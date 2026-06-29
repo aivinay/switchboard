@@ -215,6 +215,7 @@ preferences:
   compression_threshold_tokens: 1000
   semantic_memory_enabled: true
   semantic_memory_top_k: 3
+  claude_code_web_search: true  # allow Claude Code WebSearch for live-data fallback
   finance_provider: "yahoo"
   news_provider: "google_news_rss"
 ```
