@@ -1285,9 +1285,59 @@ def test_backends_command_prints_availability(monkeypatch, capsys) -> None:
     output = capsys.readouterr().out
     assert "codex" in output
     assert "web-search" in output
+    assert "news" in output
     assert "finance" in output
     assert "secret-web-key" not in output
     assert "secret-finance-key" not in output
+
+
+def test_backends_command_marks_direct_web_search_optional_when_claude_websearch_available(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    class FakeCoreService:
+        def backends(self):  # noqa: ANN201
+            return [
+                BackendInfo(
+                    name="claude-code",
+                    available=True,
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                    path="/usr/bin/claude",
+                )
+            ]
+
+    personal_config = tmp_path / "personal.yaml"
+    personal_config.write_text(
+        """
+preferences:
+  finance_provider: ""
+  news_provider: ""
+  claude_code_web_search: true
+""",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        environment="test",
+        database_url=f"sqlite:///{tmp_path / 'backends.db'}",
+        models_config_path=str(ROOT / "config" / "models.yaml"),
+        policies_config_path=str(ROOT / "config" / "policies.yaml"),
+        personal_config_path=str(personal_config),
+    )
+    monkeypatch.setattr("switchboard.cli.build_core_service", lambda: FakeCoreService())
+    monkeypatch.setattr("switchboard.cli.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "switchboard.cli.shutil.which",
+        lambda executable: "/usr/bin/claude" if executable == "claude" else None,
+    )
+    monkeypatch.delenv("SWITCHBOARD_WEB_PROVIDER", raising=False)
+    monkeypatch.delenv("BRAVE_SEARCH_API_KEY", raising=False)
+
+    backends_command(argparse.Namespace(format="text"))
+
+    output = capsys.readouterr().out
+    assert "web-search  not configured (optional; Claude Code WebSearch available)" in output
+    assert "provider=unconfigured" in output
 
 
 def test_doctor_command_prints_provider_status_without_keys(
@@ -1305,20 +1355,184 @@ def test_doctor_command_prints_provider_status_without_keys(
     monkeypatch.setattr("switchboard.cli.get_settings", lambda: settings)
     monkeypatch.setenv("SWITCHBOARD_WEB_PROVIDER", "brave")
     monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "secret-web-key")
-    monkeypatch.setenv("SWITCHBOARD_FINANCE_PROVIDER", "alpha_vantage")
-    monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", "secret-finance-key")
     monkeypatch.setattr(
         "httpx.get",
         lambda *args, **kwargs: (_ for _ in ()).throw(httpx.HTTPError("offline")),
     )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="",
+            stderr="",
+        ),
+    )
+    monkeypatch.setenv("SWITCHBOARD_FINANCE_PROVIDER", "alpha_vantage")
+    monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", "secret-finance-key")
 
     doctor_command(argparse.Namespace())
 
     output = capsys.readouterr().out
     assert "Web search provider: brave configured" in output
-    assert "Finance provider: alpha_vantage configured" in output
+    assert "Weather tool: available via direct web search" in output
+    assert "Live/latest info tool: configured (google_news_rss)" in output
+    assert "News provider: google_news_rss configured" in output
+    assert "Finance provider: yahoo configured" in output
     assert "secret-web-key" not in output
     assert "secret-finance-key" not in output
+
+
+def test_doctor_latest_status_uses_direct_web_search_without_news(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    personal_config = tmp_path / "personal.yaml"
+    personal_config.write_text(
+        """
+preferences:
+  finance_provider: ""
+  news_provider: ""
+  claude_code_web_search: false
+""",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        environment="test",
+        database_url=f"sqlite:///{tmp_path / 'doctor-web.db'}",
+        models_config_path=str(ROOT / "config" / "models.yaml"),
+        policies_config_path=str(ROOT / "config" / "policies.yaml"),
+        personal_config_path=str(personal_config),
+    )
+    monkeypatch.setattr("switchboard.cli.get_settings", lambda: settings)
+    monkeypatch.setenv("SWITCHBOARD_WEB_PROVIDER", "brave")
+    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "secret-web-key")
+    monkeypatch.setattr(
+        "httpx.get",
+        lambda *args, **kwargs: (_ for _ in ()).throw(httpx.HTTPError("offline")),
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="",
+            stderr="",
+        ),
+    )
+
+    doctor_command(argparse.Namespace())
+
+    output = capsys.readouterr().out
+    assert "Live/latest info tool: available via direct web search" in output
+    assert "News provider: not configured" in output
+    assert "secret-web-key" not in output
+
+
+def test_doctor_latest_status_uses_claude_websearch_when_cli_available(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    personal_config = tmp_path / "personal.yaml"
+    personal_config.write_text(
+        """
+preferences:
+  finance_provider: ""
+  news_provider: ""
+  claude_code_web_search: true
+""",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        environment="test",
+        database_url=f"sqlite:///{tmp_path / 'doctor-claude-websearch.db'}",
+        models_config_path=str(ROOT / "config" / "models.yaml"),
+        policies_config_path=str(ROOT / "config" / "policies.yaml"),
+        personal_config_path=str(personal_config),
+    )
+    monkeypatch.setattr("switchboard.cli.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "switchboard.cli.shutil.which",
+        lambda executable: "/usr/bin/claude" if executable == "claude" else None,
+    )
+    monkeypatch.delenv("SWITCHBOARD_WEB_PROVIDER", raising=False)
+    monkeypatch.delenv("BRAVE_SEARCH_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "httpx.get",
+        lambda *args, **kwargs: (_ for _ in ()).throw(httpx.HTTPError("offline")),
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="",
+            stderr="",
+        ),
+    )
+
+    doctor_command(argparse.Namespace())
+
+    output = capsys.readouterr().out
+    assert "Live/latest info tool: available via Claude Code WebSearch" in output
+    assert (
+        "Web search provider: not configured (optional; Claude Code WebSearch available)"
+        in output
+    )
+
+
+def test_doctor_does_not_report_claude_websearch_when_cli_missing(
+    monkeypatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    personal_config = tmp_path / "personal.yaml"
+    personal_config.write_text(
+        """
+preferences:
+  finance_provider: ""
+  news_provider: ""
+  claude_code_web_search: true
+""",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        environment="test",
+        database_url=f"sqlite:///{tmp_path / 'doctor-claude-missing.db'}",
+        models_config_path=str(ROOT / "config" / "models.yaml"),
+        policies_config_path=str(ROOT / "config" / "policies.yaml"),
+        personal_config_path=str(personal_config),
+    )
+    monkeypatch.setattr("switchboard.cli.get_settings", lambda: settings)
+    monkeypatch.setattr("switchboard.cli.shutil.which", lambda executable: None)
+    monkeypatch.delenv("SWITCHBOARD_WEB_PROVIDER", raising=False)
+    monkeypatch.delenv("BRAVE_SEARCH_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "httpx.get",
+        lambda *args, **kwargs: (_ for _ in ()).throw(httpx.HTTPError("offline")),
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="",
+            stderr="",
+        ),
+    )
+
+    doctor_command(argparse.Namespace())
+
+    output = capsys.readouterr().out
+    assert "Weather tool: not configured" in output
+    assert "Live/latest info tool: not configured" in output
+    assert "Claude Code WebSearch available" not in output
 
 
 def test_metrics_command_summary(monkeypatch, capsys) -> None:

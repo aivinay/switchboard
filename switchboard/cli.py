@@ -41,6 +41,7 @@ from switchboard.app.services.personal_switchboard import (
 )
 from switchboard.app.services.provider_status import (
     finance_provider_status,
+    news_provider_status,
     web_provider_status,
 )
 from switchboard.app.services.semantic_memory import EmbeddingUnavailableError
@@ -404,6 +405,36 @@ def print_core_route(
         print_json(decision)
 
 
+def provider_status_text(name: str, configured: bool) -> str:
+    status = "configured" if configured else "not configured"
+    if name in {"", "none", "unconfigured"}:
+        return status
+    return f"{name} {status}"
+
+
+def claude_code_web_search_available(config: PersonalConfig) -> bool:
+    if not config.preferences.claude_code_web_search:
+        return False
+    executable = os.getenv("SWITCHBOARD_CLAUDE_CODE_EXECUTABLE", "claude")
+    return shutil.which(executable) is not None
+
+
+def live_latest_status_text(
+    *,
+    news_name: str,
+    news_configured: bool,
+    web_configured: bool,
+    claude_web_search_available: bool,
+) -> str:
+    if news_configured:
+        return f"configured ({news_name})"
+    if web_configured:
+        return "available via direct web search"
+    if claude_web_search_available:
+        return "available via Claude Code WebSearch"
+    return "not configured"
+
+
 def print_route(
     response: PersonalRouteResponse,
     show_prompt: bool = False,
@@ -548,6 +579,9 @@ def models_command(args: argparse.Namespace) -> None:
 
 def backends_command(args: argparse.Namespace) -> None:
     service = build_core_service()
+    settings = get_settings()
+    config = PersonalConfig.from_yaml(settings.personal_config_path)
+    preferences = config.preferences
     if args.format == "json":
         print_json([backend.model_dump(mode="json") for backend in service.backends()])
         return
@@ -559,10 +593,18 @@ def backends_command(args: argparse.Namespace) -> None:
         if backend.warning:
             print(f"  warning: {backend.warning}")
     web_name, web_configured = web_provider_status()
-    finance_name, finance_configured = finance_provider_status()
+    finance_name, finance_configured = finance_provider_status(preferences.finance_provider)
+    news_name, news_configured = news_provider_status(preferences.news_provider)
+    web_status = "configured" if web_configured else "not configured"
+    if not web_configured and claude_code_web_search_available(config):
+        web_status = f"{web_status} (optional; Claude Code WebSearch available)"
     print(
-        f"web-search  {'configured' if web_configured else 'not configured':15} "
+        f"web-search  {web_status:15} "
         f"provider={web_name}"
+    )
+    print(
+        f"news        {'configured' if news_configured else 'not configured':15} "
+        f"provider={news_name}"
     )
     print(
         f"finance     {'configured' if finance_configured else 'not configured':15} "
@@ -1152,15 +1194,33 @@ def doctor_command(args: argparse.Namespace) -> None:
     print(f"Response logging disabled: {not settings.log_responses}")
     print("Runtime context: available")
     print("Time tool: available")
-    print("Weather tool: not configured")
-    print("Live/latest info tool: not configured")
     web_name, web_configured = web_provider_status()
-    finance_name, finance_configured = finance_provider_status()
-    print(f"Web search provider: {web_name} {'configured' if web_configured else 'not configured'}")
-    print(
-        f"Finance provider: {finance_name} "
-        f"{'configured' if finance_configured else 'not configured'}"
+    finance_name, finance_configured = finance_provider_status(config.preferences.finance_provider)
+    news_name, news_configured = news_provider_status(config.preferences.news_provider)
+    claude_web_search_available = claude_code_web_search_available(config)
+    weather_status = (
+        "available via direct web search"
+        if web_configured
+        else (
+            "available via Claude Code WebSearch"
+            if claude_web_search_available
+            else "not configured"
+        )
     )
+    latest_status = live_latest_status_text(
+        news_name=news_name,
+        news_configured=news_configured,
+        web_configured=web_configured,
+        claude_web_search_available=claude_web_search_available,
+    )
+    print(f"Weather tool: {weather_status}")
+    print(f"Live/latest info tool: {latest_status}")
+    web_status = provider_status_text(web_name, web_configured)
+    if not web_configured and claude_web_search_available:
+        web_status = f"{web_status} (optional; Claude Code WebSearch available)"
+    print(f"Web search provider: {web_status}")
+    print(f"News provider: {provider_status_text(news_name, news_configured)}")
+    print(f"Finance provider: {provider_status_text(finance_name, finance_configured)}")
     print("Session store: available")
     print("Context builder: available")
     print("Default recent messages: 12")

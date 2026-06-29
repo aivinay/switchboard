@@ -63,7 +63,8 @@ class PersonalPreferences(BaseModel):
     # --allowedTools). Off by default; uses your Claude subscription's search.
     claude_code_web_search: bool = False
     # Live-data providers, enabled by default with keyless services so every
-    # install grounds stock/news answers out of the box ("" = disabled).
+    # install grounds stock/news answers out of the box. Empty values fall back
+    # to env-based provider defaults; use "none" to disable a provider.
     # Time, date, calculator, and unit conversion are always on (no provider
     # needed); web search stays off until a Brave API key is configured.
     finance_provider: str = "yahoo"
