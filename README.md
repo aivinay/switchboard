@@ -7,8 +7,6 @@
 
 <p align="center"><strong>Simple work local. Hard work premium. Secrets stay home.</strong></p>
 
-<p align="center">Switchboard sends each prompt to Ollama, Codex, or Claude Code, keeps sensitive prompts local by default, and shows the routing decision.</p>
-
 <p align="center">
   <strong>100-case benchmark:</strong> 62% fewer premium-agent calls · 4.1/5 quality vs 4.6/5 always-premium · 100% answered · no benchmark leaks observed
 </p>
