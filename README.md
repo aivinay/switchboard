@@ -1,13 +1,21 @@
 <h1 align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/switchboard-wordmark-dark.svg">
-    <img src="assets/switchboard-wordmark.svg" alt="Switchboard" width="920">
+    <img src="assets/switchboard-wordmark.svg" alt="Switchboard" width="780">
   </picture>
 </h1>
 
-<p align="center"><strong>Local-first prompt router for Codex, Claude Code, and Ollama.</strong></p>
+<p align="center"><strong>Route each prompt to the cheapest safe AI agent without losing context.</strong></p>
 
-<p align="center">On a 100-case benchmark: 62% of prompts stay off premium agents · 4+ quality vs 4.6 premium · 0 measured privacy leaks.</p>
+<p align="center">Switchboard sends each prompt to Ollama, Codex, or Claude Code, keeps sensitive prompts local by default, and shows the routing decision.</p>
+
+<p align="center">
+  <strong>100-case benchmark:</strong> 62% fewer premium-agent calls · 4.1/5 quality vs 4.6/5 always-premium · 100% answered · no benchmark leaks observed
+</p>
+
+![Switchboard automatic routing demo](auto_route_demo.gif)
+
+<p align="center"><em>One session, three backends: local by default, Codex for code, Claude Code for reasoning.</em></p>
 
 <p align="center">
   <a href="https://github.com/aivinay/switchboard/actions/workflows/ci.yml"><img src="https://github.com/aivinay/switchboard/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -18,24 +26,20 @@
 </p>
 
 <p align="center">
-  <a href="#get-started-60-seconds">Install</a> ·
-  <a href="#proof">Proof</a> ·
+  <a href="#get-started">Install</a> ·
+  <a href="#evaluation">Evaluation</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#privacy">Privacy</a> ·
   <a href="#the-paper">Paper</a> ·
   <a href="docs/">Docs</a>
 </p>
 
-![Switchboard automatic routing demo](auto_route_demo.gif)
-
-<p align="center"><em>Live automatic routing: local Ollama → Codex → Claude Code, decided per prompt.</em></p>
-
 Switchboard wraps the CLI tools you already use — no separate service, no proxy, no resold API access — and routes each prompt with deterministic rules before any learned classifier runs.
 
 In its 100-case benchmark, Switchboard kept **62% of requests off premium
-agents** while reaching **4+ quality** against a **4.6 premium baseline**,
-with **100% answered** and **zero measured privacy leaks in the benchmark**.
-See [Proof](#proof) for the numbers and reproduction bundle.
+agents** while reaching **4.1/5 quality** against a **4.6/5 always-premium
+baseline**, with **100% answered** and **no benchmark leaks observed**. See
+[Evaluation](#evaluation) for the numbers and reproduction bundle.
 
 Use it when you want to:
 
@@ -88,7 +92,7 @@ the learned components.** Privacy, tool grounding, forced selection, and
 fallback keep working even when the local model runtime — and therefore every
 learned component — is down.
 
-## Get started (60 seconds)
+## Get started
 
 ```bash
 pip install switchboard-local
@@ -134,7 +138,7 @@ Memory is local. `switchboard memory add` stores the item in SQLite and, when `s
 
 Details: [docs/context-memory-compression.md](docs/context-memory-compression.md).
 
-## Proof
+## Evaluation
 
 A 100-case benchmark across five task categories (coding, reasoning,
 summarization, private, grounding), run on real backends and judged by a local
@@ -151,7 +155,7 @@ numbers, confidence intervals, and significance tests are in the paper):
 
 <sub>¹ The "just use the premium agent for everything" baseline must <em>block</em> every
 sensitive prompt to stay leak-free, so its coverage collapses — exactly the gap
-Switchboard closes. <strong>Zero measured leaks in every condition and every run.</strong></sub>
+Switchboard closes. <strong>No benchmark leaks were observed in any condition or run.</strong></sub>
 
 These numbers come from a real-backend benchmark whose full harness travels with the paper's [reproduction bundle on Zenodo](https://doi.org/10.5281/zenodo.20836918).
 
