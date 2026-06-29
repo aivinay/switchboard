@@ -26,7 +26,7 @@ Open `http://127.0.0.1:8080/ui`.
 | Deterministic tool | `Time in India` | TimeTool answers without model guessing. |
 | Stock grounding | `What is ServiceNow stock trading at?` | Configured finance provider grounds the quote or returns an honest provider fallback. |
 | News grounding | `Latest news about OpenAI` | Configured news provider supplies trusted headlines or returns an honest provider fallback. |
-| Weather boundary | `Weather in India` | Weather is detected; without a configured weather/search path, Switchboard avoids inventing live weather. |
+| Weather boundary | `Weather in India` | Weather is detected; with the starter config and Claude Code available, Auto uses Claude WebSearch. Without a configured search path, Switchboard avoids inventing live weather. |
 | Shared context | `Remember: Switchboard routes between Codex, Claude, and Ollama.` Then switch model and ask `What did I ask you to remember?` | The next backend receives recent session context. |
 | Semantic memory | Add a memory with `switchboard memory add`, then ask with `--backend auto --memory` | Indexed local memories can be injected as `<long_term_memory>`. |
 | Compression metadata | Ask a long-context question with `--backend auto --show-metadata` | Metadata includes request/context compression token estimates and savings. |
