@@ -8,7 +8,7 @@
 <p align="center"><strong>Simple work local. Hard work premium. Secrets stay home.</strong></p>
 
 <p align="center">
-  <strong>100-case benchmark:</strong> 62% fewer premium-agent calls · 4.1/5 quality vs 4.6/5 always-premium · 100% answered · no benchmark leaks observed
+  62% fewer premium-agent calls · 4.1/5 quality vs 4.6/5 always-premium · 0 benchmark leaks observed
 </p>
 
 ![Switchboard automatic routing demo](auto_route_demo.gif)
