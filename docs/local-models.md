@@ -1,8 +1,8 @@
 # Local Models
 
-`route` is useful immediately with mock and manual providers because it only recommends.
-`ask` becomes truly useful after enabling a real local provider such as Ollama or LM
-Studio. Mock answers are demo-only.
+`route` is useful immediately because it previews the backend decision without calling a
+model. `ask` becomes truly useful after enabling a real backend such as Ollama, LM
+Studio, Codex, or Claude Code. Mock answers are demo-only.
 
 Local models are useful, fast, and private, but they can over-infer. For summarisation,
 Switchboard adds source-grounding instructions before calling the model: use only the

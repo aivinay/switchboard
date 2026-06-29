@@ -2,12 +2,10 @@
 
 Switchboard's stateful core path gives one conversation a shared working context across
 Ollama, Codex, Claude Code, and deterministic tools. The web UI uses this path by
-default. In the CLI, use `switchboard ask --backend auto` or a concrete backend such as
-`--backend codex` to use the same path.
+default. In the CLI, bare `switchboard ask`, `switchboard ask --backend auto`, and
+concrete backends such as `--backend codex` use the same path.
 
-The older personal route/call surface still powers `switchboard route` and bare
-`switchboard ask`. That surface is useful for recommendations, usage accounting, and
-local-first calls, but it is not the session-memory path described here.
+`switchboard route` previews the same backend decision without calling a model.
 
 ## Request Flow
 

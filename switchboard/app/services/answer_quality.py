@@ -280,5 +280,5 @@ class AnswerQualityHeuristic:
             "- Force a stronger local model:\n"
             "  switchboard ask '<same prompt>' --force-model ollama/qwen3:8b\n"
             "- If this is important enough for premium:\n"
-            "  switchboard route '<same prompt>' --force-model manual/claude-web --show-prompt"
+            "  switchboard ask '<same prompt>' --backend claude-code"
         )

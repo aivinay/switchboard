@@ -98,6 +98,61 @@ class SwitchboardCoreService:
     def metrics_summary(self) -> dict[str, object]:
         return self.metrics.summary()
 
+    def preview_route(
+        self,
+        prompt: str,
+        *,
+        backend: str | None = None,
+        project: str | None = None,
+        model: str | None = None,
+        timeout_s: int = 120,
+        metadata: dict[str, object] | None = None,
+    ) -> BackendRouteDecision:
+        request = SwitchboardRequest(
+            request_id=new_request_id(self.container.settings.request_id_prefix),
+            prompt=prompt,
+            project=project or self.container.personal_config.profile.default_project,
+            model=model,
+            timeout_s=timeout_s,
+            private_mode=self.container.personal_config.preferences.private_mode,
+            metadata={
+                "context_message_count": 0,
+                "context_summary_used": False,
+                "context_recent_message_count": 0,
+                "context_injected": False,
+                "grounded_by_tool": False,
+                "model_called": False,
+                "followup_intent_reused": False,
+                **dict(metadata or {}),
+            },
+        )
+        runtime_context = self.runtime_context_provider.current()
+        detection = self.capability_detector.detect(prompt)
+        tool_result = self.tool_registry.resolve(
+            prompt=prompt,
+            detection=detection,
+            context=runtime_context,
+        )
+        if tool_result is None:
+            detection, tool_result = self._maybe_dispatch_learned_tool(
+                prompt=prompt,
+                detection=detection,
+                context=runtime_context,
+                request=request,
+            )
+        request.metadata.update(self._capability_metadata(detection))
+        request.metadata.update(self._phase2_metadata(detection))
+        if tool_result is not None and tool_result.success:
+            request.metadata.update(self._tool_grounding_metadata(tool_result))
+        elif tool_result is not None:
+            request.metadata.update(self._tool_pass_through_metadata(tool_result))
+        elif self._has_unconfigured_live_capability(detection):
+            request.metadata.update(self._pass_through_metadata(detection))
+        request = self.compression.compress(request)
+        decision = self.route(request, forced_backend=backend)
+        request.metadata.update(self._route_metadata(decision))
+        return decision
+
     def ask(
         self,
         prompt: str,

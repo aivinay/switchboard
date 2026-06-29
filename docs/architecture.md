@@ -71,15 +71,18 @@ force unavailable backends, skip tool verification, or bypass provider boundarie
 
 Switchboard currently has two related surfaces:
 
-- `switchboard route` and bare `switchboard ask` use the personal route/call service.
-  This path handles recommendations, confirmation rules, usage accounting, local runtime
-  routing, local feedback, and prompt-compression estimates for route responses.
-- The web UI and `switchboard ask --backend auto` use the fully configured core service.
+- `switchboard route` previews the same backend decision as the core service without
+  calling a model.
+- The web UI, bare `switchboard ask`, and `switchboard ask --backend auto` use the fully configured core service.
   This path owns shared sessions, context injection, semantic-memory retrieval,
   Headroom-style context compression, backend adapters, and backend telemetry.
 
 Both surfaces share the same configuration, model catalogue, provider boundaries, local
-SQLite database, and privacy defaults.
+SQLite database, routing policy, and privacy defaults.
+
+The `/personal/*` API, savings ledger, feedback, rerun, and escalation commands remain
+on `PersonalSwitchboardService` for personal accounting and legacy recommendation
+workflows; they are not the public CLI `route`/bare `ask` path.
 
 ## Boundaries
 

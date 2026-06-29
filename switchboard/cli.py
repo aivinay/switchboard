@@ -20,7 +20,7 @@ from switchboard.app.core.config import (
     packaged_config_path,
     user_config_dir,
 )
-from switchboard.app.models.backends import SwitchboardResponse
+from switchboard.app.models.backends import BackendRouteDecision, SwitchboardResponse
 from switchboard.app.models.catalogue import ModelCatalogue
 from switchboard.app.models.personal import (
     FeedbackCreate,
@@ -327,6 +327,83 @@ def backend_error_hint(response: SwitchboardResponse) -> str | None:
     return None
 
 
+CORE_BACKEND_BY_FORCE_MODEL = {
+    "codex": "codex",
+    "claude": "claude-code",
+    "claude-code": "claude-code",
+    "ollama": "ollama",
+}
+
+
+def core_backend_and_model(
+    backend: str | None,
+    force_model: str | None,
+) -> tuple[str | None, str | None]:
+    resolved_backend = None if backend in {None, "auto"} else backend
+    model = force_model
+    if not force_model:
+        return resolved_backend, model
+    if force_model.startswith("manual/"):
+        raise SystemExit(
+            f"{force_model} is a manual subscription catalogue entry, not a "
+            "callable Switchboard Core backend. Choose "
+            "--backend codex, --backend claude-code, or --backend ollama."
+        )
+    forced_backend = CORE_BACKEND_BY_FORCE_MODEL.get(force_model)
+    if forced_backend is None and force_model.startswith("ollama/"):
+        forced_backend = "ollama"
+    if forced_backend is None:
+        return resolved_backend, model
+    if resolved_backend is not None and resolved_backend != forced_backend:
+        raise SystemExit(
+            f"--force-model {force_model} implies backend {forced_backend}, "
+            f"but --backend {resolved_backend} was selected."
+        )
+    if force_model in {"codex", "claude", "claude-code", "ollama"}:
+        model = None
+    return forced_backend, model
+
+
+def core_route_next_step(decision: BackendRouteDecision, model: str | None) -> str:
+    if decision.forced_backend and model:
+        return (
+            "switchboard ask "
+            f"--backend {decision.backend} --force-model {model} '<same prompt>'"
+        )
+    if decision.forced_backend:
+        return f"switchboard ask --backend {decision.backend} '<same prompt>'"
+    if model:
+        return f"switchboard ask --force-model {model} '<same prompt>'"
+    return "switchboard ask '<same prompt>'"
+
+
+def print_core_route(
+    decision: BackendRouteDecision,
+    *,
+    prompt: str,
+    model: str | None = None,
+    show_prompt: bool = False,
+    debug: bool = False,
+) -> None:
+    print(f"Recommendation: {decision.display_model}")
+    print(f"Backend: {decision.backend}")
+    print(f"Route type: {decision.route_type}")
+    print(f"Fallback used: {decision.fallback_used}")
+    if decision.fallback_from:
+        print(f"Fallback from: {decision.fallback_from}")
+    print(f"Forced backend: {decision.forced_backend}")
+    if model:
+        print(f"Model override: {model}")
+    print(f"Routing: {decision.routing_reason}")
+    print(f"Next step: {core_route_next_step(decision, model)}")
+    if show_prompt:
+        print("\nPrompt:")
+        print(prompt)
+    if debug:
+        print("\nRaw route decision:")
+        print_json(decision)
+
+
 def print_route(
     response: PersonalRouteResponse,
     show_prompt: bool = False,
@@ -372,51 +449,55 @@ def print_route(
 
 
 def route_command(args: argparse.Namespace) -> None:
-    service = build_service()
-    try:
-        response = service.route(
-            PersonalPromptRequest(
-                prompt=args.prompt,
-                project=args.project,
-                use_cache=not args.no_cache,
-                force_model=args.force_model,
-                allow_cloud_once=args.allow_cloud_once,
-                override_reason=args.override_reason,
-                baseline_model=args.baseline,
-            )
-        )
-    except PersonalRoutingError as exc:
-        raise SystemExit(f"Error: {exc}") from exc
-    print_route(response, show_prompt=args.show_prompt, debug=args.debug or args.show_reasons)
+    backend, model = core_backend_and_model(None, args.force_model)
+    service = build_core_service()
+    response = service.preview_route(
+        args.prompt,
+        backend=backend,
+        project=args.project,
+        model=model,
+        metadata={"surface": "cli_route"},
+    )
+    print_core_route(
+        response,
+        prompt=args.prompt,
+        model=model,
+        show_prompt=args.show_prompt,
+        debug=args.debug or args.show_reasons,
+    )
 
 
 def ask_command(args: argparse.Namespace) -> None:
-    backend = getattr(args, "backend", None)
-    if backend is not None:
-        print(
-            f"Calling backend {backend} with timeout {getattr(args, 'timeout', 120)}s...",
-            flush=True,
-        )
-        backend_response = build_core_service(
-            router_mode=getattr(args, "router", None),
-            compression=(False if getattr(args, "no_compression", False) else None),
-            semantic_memory=(True if getattr(args, "memory", False) else None),
-        ).ask(
-            args.prompt,
-            backend=None if backend == "auto" else backend,
-            project=args.project,
-            model=args.force_model,
-            timeout_s=getattr(args, "timeout", 120),
-            session_id=(
-                None if getattr(args, "new_session", False) else getattr(args, "session", None)
-            ),
-            new_session=getattr(args, "new_session", False),
-        )
-        print_backend_response(backend_response, show_metadata=args.show_metadata)
-        if not backend_response.success:
-            raise SystemExit(1)
-        return
+    requested_backend = getattr(args, "backend", None) or "auto"
+    backend, model = core_backend_and_model(
+        requested_backend,
+        getattr(args, "force_model", None),
+    )
+    print(
+        f"Calling backend {requested_backend} with timeout {getattr(args, 'timeout', 120)}s...",
+        flush=True,
+    )
+    backend_response = build_core_service(
+        router_mode=getattr(args, "router", None),
+        compression=(False if getattr(args, "no_compression", False) else None),
+        semantic_memory=(True if getattr(args, "memory", False) else None),
+    ).ask(
+        args.prompt,
+        backend=backend,
+        project=args.project,
+        model=model,
+        timeout_s=getattr(args, "timeout", 120),
+        session_id=(
+            None if getattr(args, "new_session", False) else getattr(args, "session", None)
+        ),
+        new_session=getattr(args, "new_session", False),
+    )
+    print_backend_response(backend_response, show_metadata=args.show_metadata)
+    if not backend_response.success:
+        raise SystemExit(1)
 
+
+def personal_ask_command(args: argparse.Namespace) -> None:
     service = build_service()
     try:
         personal_response = asyncio.run(
@@ -1208,20 +1289,19 @@ def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="switchboard")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    route = subparsers.add_parser("route", help="Recommend a model route without calling it")
+    route = subparsers.add_parser(
+        "route",
+        help="Preview the core backend route without calling a model",
+    )
     route.add_argument("prompt")
     route.add_argument("--project")
-    route.add_argument("--no-cache", action="store_true")
     route.add_argument("--show-prompt", action="store_true")
     route.add_argument("--debug", action="store_true")
     route.add_argument("--show-reasons", action="store_true")
     route.add_argument("--force-model")
-    route.add_argument("--allow-cloud-once", action="store_true")
-    route.add_argument("--override-reason")
-    route.add_argument("--baseline")
     route.set_defaults(func=route_command)
 
-    ask = subparsers.add_parser("ask", help="Ask through the local-first router")
+    ask = subparsers.add_parser("ask", help="Ask through the core router")
     ask.add_argument("prompt")
     ask.add_argument("--project")
     ask.add_argument("--backend", choices=["auto", "ollama", "codex", "claude-code"])
@@ -1243,14 +1323,8 @@ def make_parser() -> argparse.ArgumentParser:
     ask.add_argument("--session")
     ask.add_argument("--new-session", action="store_true")
     ask.add_argument("--timeout", type=int, default=120)
-    ask.add_argument("--no-cache", action="store_true")
-    ask.add_argument("--show-prompt", action="store_true")
     ask.add_argument("--show-metadata", action="store_true")
-    ask.add_argument("--strict", action="store_true")
     ask.add_argument("--force-model")
-    ask.add_argument("--allow-cloud-once", action="store_true")
-    ask.add_argument("--override-reason")
-    ask.add_argument("--baseline")
     ask.set_defaults(func=ask_command)
 
     models = subparsers.add_parser("models", help="List configured models")
