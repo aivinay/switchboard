@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import json
 import os
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Protocol
-from urllib.parse import quote_plus, urlencode
-from urllib.request import Request, urlopen
+from urllib.parse import quote_plus
 
+import httpx
 from pydantic import BaseModel
 
 
@@ -71,18 +70,17 @@ class AlphaVantageFinanceProvider:
     def get_quote(self, symbol: str) -> StockQuote:
         if not self.api_key:
             raise RuntimeError("ALPHA_VANTAGE_API_KEY is not configured")
-        query = urlencode(
-            {
+        response = httpx.get(
+            "https://www.alphavantage.co/query",
+            params={
                 "function": "GLOBAL_QUOTE",
                 "symbol": symbol.upper(),
                 "apikey": self.api_key,
-            }
-        )
-        with urlopen(  # noqa: S310 - user-configured finance API endpoint.
-            f"https://www.alphavantage.co/query?{query}",
+            },
             timeout=self.timeout_s,
-        ) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+        )
+        response.raise_for_status()
+        payload = response.json()
         quote = payload.get("Global Quote") or {}
         price_text = quote.get("05. price")
         if not price_text:
@@ -176,12 +174,13 @@ class YahooFinanceProvider:
         return True
 
     def _http_fetch(self, symbol: str) -> dict:
-        request = Request(  # noqa: S310 - fixed, well-known finance endpoint.
+        response = httpx.get(
             f"{self._BASE_URL}{quote_plus(symbol.upper())}",
             headers={"User-Agent": "Mozilla/5.0 (Switchboard local assistant)"},
+            timeout=self.timeout_s,
         )
-        with urlopen(request, timeout=self.timeout_s) as response:  # noqa: S310
-            return json.loads(response.read().decode("utf-8"))
+        response.raise_for_status()
+        return response.json()
 
     def get_quote(self, symbol: str) -> StockQuote:
         payload = self._fetch_json(symbol)

@@ -3,7 +3,9 @@
 ## Reporting a vulnerability
 
 Please **do not** open a public issue for security or privacy vulnerabilities.
-Instead, email **ai.vinaygupta@gmail.com** with:
+Instead, use GitHub's private vulnerability reporting for this repository. If
+private reporting is unavailable, contact the maintainer privately through
+GitHub with:
 
 - a description of the issue and its impact,
 - steps to reproduce, and
@@ -29,7 +31,7 @@ Switchboard is local-first and privacy-aware by design:
   routing boundary and the redactor cannot drift apart.
 
 If you find a way to make a sensitive prompt reach a non-local backend, that is
-a security issue — please report it privately as above.
+a security issue — please report it privately through GitHub as above.
 
 ## Handling secrets
 

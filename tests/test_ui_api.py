@@ -74,6 +74,7 @@ class RecordingAdapter(AgentAdapter):
 def fake_adapters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> dict[str, RecordingAdapter]:
+    monkeypatch.setenv("SWITCHBOARD_HTTP_ENABLE_CLI_BACKENDS", "true")
     adapters = {
         "ollama": RecordingAdapter("ollama"),
         "codex": RecordingAdapter("codex", cost_type=BackendCostType.SUBSCRIPTION),
@@ -89,6 +90,18 @@ def fake_adapters(
         classmethod(lambda cls, container, cwd=None: registry),
     )
     return adapters
+
+
+def test_ui_chat_blocks_subscription_cli_backends_by_default(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SWITCHBOARD_HTTP_ENABLE_CLI_BACKENDS", raising=False)
+
+    response = client.post("/api/chat", json={"message": "Say OK only.", "backend": "codex"})
+
+    assert response.status_code == 403
+    assert "disabled on the HTTP API" in response.json()["detail"]["message"]
 
 
 @pytest.mark.parametrize(

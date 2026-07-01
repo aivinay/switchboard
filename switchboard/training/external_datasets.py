@@ -21,9 +21,10 @@ from __future__ import annotations
 
 import json
 import random
-import urllib.request
 from collections.abc import Callable
 from pathlib import Path
+
+import httpx
 
 from switchboard.training.router_dataset import RouterExample
 
@@ -73,11 +74,9 @@ _MAX_PROMPT_CHARS = 300
 
 
 def _http_get_json(url: str, timeout_s: int = 30) -> dict:
-    request = urllib.request.Request(  # noqa: S310 - fixed dataset hosts.
-        url, headers={"User-Agent": _USER_AGENT}
-    )
-    with urllib.request.urlopen(request, timeout=timeout_s) as response:  # noqa: S310
-        return json.loads(response.read().decode("utf-8"))
+    response = httpx.get(url, headers={"User-Agent": _USER_AGENT}, timeout=timeout_s)
+    response.raise_for_status()
+    return response.json()
 
 
 def _hf_rows(

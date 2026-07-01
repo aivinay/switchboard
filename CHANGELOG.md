@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-07-01
+
+### Changed
+- Removed public personal contact details from package, citation, security, and
+  conduct metadata.
+- Run the container image as an unprivileged user and restrict CI token
+  permissions to read-only repository contents.
+- Bind dev and Docker Compose servers to localhost by default, keep private
+  files out of Docker build contexts, run Compose with a read-only root
+  filesystem, and keep HTTP-triggered subscription CLI backends disabled unless
+  explicitly enabled.
+- Keep full feedback-example snapshots opt-in in the starter config.
+
+### Fixed
+- Hardened live-data fetchers to use HTTP(S) client calls with status checks and
+  defused XML parsing for RSS feeds.
+
 ## [0.2.2] - 2026-06-29
 
 ### Fixed
@@ -75,7 +92,8 @@ First public release.
   bundle (Zenodo, doi:10.5281/zenodo.20836918), not this repository.
 - FastAPI service, CLI (`switchboard`), and a minimal local web UI.
 
-[Unreleased]: https://github.com/aivinay/switchboard/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/aivinay/switchboard/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/aivinay/switchboard/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/aivinay/switchboard/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/aivinay/switchboard/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/aivinay/switchboard/compare/v0.1.1...v0.2.0

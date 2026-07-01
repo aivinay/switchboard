@@ -448,3 +448,23 @@ def test_memory_add_and_search(client: TestClient) -> None:
     assert search.status_code == 200
     results = search.json()
     assert results[0]["title"] == "Router note"
+
+
+def test_memory_search_escapes_like_wildcards(client: TestClient) -> None:
+    for title, content in (
+        ("Router note", "Prefer local models for private writing tasks."),
+        ("Wildcard note", "Literal percent marker only."),
+    ):
+        response = client.post(
+            "/personal/memory",
+            json={"project": "demo", "title": title, "content": content, "tags": []},
+        )
+        assert response.status_code == 200
+
+    wildcard = client.get("/personal/memory/search?q=%&project=demo")
+    literal = client.get("/personal/memory/search?q=percent&project=demo")
+
+    assert wildcard.status_code == 200
+    assert wildcard.json() == []
+    assert literal.status_code == 200
+    assert [item["title"] for item in literal.json()] == ["Wildcard note"]

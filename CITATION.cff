@@ -5,13 +5,11 @@ type: software
 authors:
   - family-names: Gupta
     given-names: Vinay
-    orcid: "https://orcid.org/0009-0000-0749-6609"
-    email: ai.vinaygupta@gmail.com
 repository-code: "https://github.com/aivinay/switchboard"
 url: "https://github.com/aivinay/switchboard"
 license: MIT
-version: 0.2.1
-date-released: "2026-06-29"
+version: 0.2.3
+date-released: "2026-07-01"
 keywords:
   - LLM routing
   - local-first AI
@@ -29,7 +27,6 @@ preferred-citation:
   authors:
     - family-names: Gupta
       given-names: Vinay
-      orcid: "https://orcid.org/0009-0000-0749-6609"
   year: 2026
   doi: 10.5281/zenodo.20836918
   url: "https://doi.org/10.5281/zenodo.20836918"

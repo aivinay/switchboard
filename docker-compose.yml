@@ -1,10 +1,29 @@
 services:
   switchboard:
     build: .
-    env_file:
-      - .env
+    environment:
+      ICP_DATABASE_URL: sqlite:////data/switchboard.db
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    command:
+      [
+        "uvicorn",
+        "switchboard.app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+      ]
+    cap_drop:
+      - ALL
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
     volumes:
       - ./config:/app/config:ro
-      - ./switchboard.db:/app/switchboard.db
+      - switchboard-data:/data
+
+volumes:
+  switchboard-data:

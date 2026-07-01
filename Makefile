@@ -1,6 +1,6 @@
 PYTHON ?= python3
 VENV ?= .venv
-HOST ?= 0.0.0.0
+HOST ?= 127.0.0.1
 PORT ?= 8000
 VENV_PYTHON := $(VENV)/bin/python
 VENV_PYTHON_ABS := $(abspath $(VENV_PYTHON))

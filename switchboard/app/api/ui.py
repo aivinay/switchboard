@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -29,6 +30,9 @@ UI_VALUE_BY_BACKEND = {
     "claude-code": "claude",
     "ollama": "ollama",
 }
+
+HTTP_DISABLED_CLI_BACKENDS = {"codex", "claude-code"}
+TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 
 
 class UiChatRequest(BaseModel):
@@ -70,7 +74,17 @@ class UiFeedbackRequest(BaseModel):
 
 def core_service(request: Request) -> SwitchboardCoreService:
     container: ServiceContainer = request.app.state.container
-    return build_configured_core_service(container, cwd=Path.cwd())
+    service = build_configured_core_service(container, cwd=Path.cwd())
+    if not http_cli_backends_enabled():
+        for backend in HTTP_DISABLED_CLI_BACKENDS:
+            service.registry.adapters.pop(backend, None)
+    return service
+
+
+def http_cli_backends_enabled() -> bool:
+    return (
+        os.getenv("SWITCHBOARD_HTTP_ENABLE_CLI_BACKENDS", "").strip().lower() in TRUTHY_ENV_VALUES
+    )
 
 
 def ui_backend_name(backend: str) -> str:
@@ -149,9 +163,21 @@ def ask_switchboard(
     request: Request,
 ) -> SwitchboardResponse:
     message, selected_backend = validated_message_and_backend(payload)
+    forced_backend = BACKEND_BY_UI_VALUE[selected_backend]
+    if forced_backend in HTTP_DISABLED_CLI_BACKENDS and not http_cli_backends_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "message": (
+                    "Subscription CLI backends are disabled on the HTTP API by default. "
+                    "Use the switchboard CLI locally, choose Ollama, or set "
+                    "SWITCHBOARD_HTTP_ENABLE_CLI_BACKENDS=true to opt in."
+                )
+            },
+        )
     response = core_service(request).ask(
         message,
-        backend=BACKEND_BY_UI_VALUE[selected_backend],
+        backend=forced_backend,
         project="ui",
         metadata={"surface": "ui", "requested_backend": selected_backend},
         session_id=payload.session_id,
@@ -286,9 +312,7 @@ def chat_feedback(payload: UiFeedbackRequest, request: Request) -> FeedbackRead:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
                 "message": (
-                    "corrected_backend must be one of: "
-                    + ", ".join(VALID_CORRECTED_BACKENDS)
-                    + "."
+                    "corrected_backend must be one of: " + ", ".join(VALID_CORRECTED_BACKENDS) + "."
                 )
             },
         )

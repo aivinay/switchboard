@@ -655,13 +655,17 @@ class MemoryRepository:
             return memory_to_read(item)
 
     def search(self, project: str, query: str, limit: int = 20) -> list[PersonalMemoryRead]:
-        pattern = f"%{query}%"
+        escaped_query = (
+            query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        pattern = f"%{escaped_query}%"
         with Session(self.engine) as session:
             statement = (
                 select(MemoryItem)
                 .where(MemoryItem.project == project)
                 .where(
-                    (col(MemoryItem.title).like(pattern)) | (col(MemoryItem.content).like(pattern))
+                    (col(MemoryItem.title).like(pattern, escape="\\"))
+                    | (col(MemoryItem.content).like(pattern, escape="\\"))
                 )
                 .order_by(desc(MemoryItem.created_at))
                 .limit(limit)

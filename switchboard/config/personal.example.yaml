@@ -46,9 +46,9 @@ preferences:
   # Live-data grounding (keyless providers; informational, not advice).
   finance_provider: "yahoo"
   news_provider: "google_news_rss"
-  # Closed feedback loop: thumbs-down stores (context, response) locally and
-  # auto-retrains the learned router after this many "wrong model" corrections.
-  store_feedback_examples: true
+  # Closed feedback loop: opt in to storing thumbs-down (context, response)
+  # snapshots locally and auto-retraining after enough "wrong model" corrections.
+  store_feedback_examples: false
   feedback_retrain_threshold: 5
 
 budgets:

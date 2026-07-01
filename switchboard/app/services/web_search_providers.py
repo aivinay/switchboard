@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import json
 import os
 from datetime import datetime
 from typing import Protocol
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
+import httpx
 from pydantic import BaseModel
 
 
@@ -63,12 +61,14 @@ class BraveSearchProvider:
     def search(self, query: str, max_results: int = 5) -> list[WebSearchResult]:
         if not self.api_key:
             raise RuntimeError("BRAVE_SEARCH_API_KEY is not configured")
-        url = "https://api.search.brave.com/res/v1/web/search?" + urlencode(
-            {"q": query, "count": max_results}
+        response = httpx.get(
+            "https://api.search.brave.com/res/v1/web/search",
+            params={"q": query, "count": max_results},
+            headers={"X-Subscription-Token": self.api_key},
+            timeout=self.timeout_s,
         )
-        request = Request(url, headers={"X-Subscription-Token": self.api_key})
-        with urlopen(request, timeout=self.timeout_s) as response:  # noqa: S310
-            payload = json.loads(response.read().decode("utf-8"))
+        response.raise_for_status()
+        payload = response.json()
         items = (payload.get("web") or {}).get("results") or []
         results: list[WebSearchResult] = []
         for index, item in enumerate(items[:max_results], start=1):

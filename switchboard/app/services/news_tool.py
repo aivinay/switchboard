@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import os
 import re
-import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Protocol
 from urllib.parse import quote_plus
-from urllib.request import Request, urlopen
 
+import httpx
+from defusedxml import ElementTree as ET
 from pydantic import BaseModel
 
 from switchboard.app.models.capabilities import Capability, ToolResult
@@ -85,12 +85,13 @@ class GoogleNewsRssProvider:
         return True
 
     def _http_fetch(self, url: str) -> str:
-        request = Request(  # noqa: S310 - fixed, well-known news endpoint.
+        response = httpx.get(
             url,
             headers={"User-Agent": "Mozilla/5.0 (Switchboard local assistant)"},
+            timeout=self.timeout_s,
         )
-        with urlopen(request, timeout=self.timeout_s) as response:  # noqa: S310
-            return response.read().decode("utf-8", errors="replace")
+        response.raise_for_status()
+        return response.text
 
     def headlines(self, query: str, *, limit: int = 5) -> list[NewsHeadline]:
         url = (

@@ -218,6 +218,7 @@ preferences:
   claude_code_web_search: true  # allow Claude Code WebSearch for live-data fallback
   finance_provider: "yahoo"
   news_provider: "google_news_rss"
+  store_feedback_examples: false
 ```
 
 Provider API keys are referenced **by environment-variable name** (e.g.
