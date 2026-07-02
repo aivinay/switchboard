@@ -2123,6 +2123,95 @@ def test_train_sensitivity_command_exits_cleanly_when_embedding_model_down(
     assert "ollama pull nomic-embed-text" in message
 
 
+def training_report():
+    from switchboard.training.train_router import TrainingReport
+
+    return TrainingReport(
+        total_examples=1,
+        train_size=1,
+        holdout_size=0,
+        holdout_accuracy=1.0,
+        golden_accuracy=1.0,
+        per_class_accuracy={"local": 1.0},
+        confusions=[],
+    )
+
+
+class FakeWeights:
+    def __init__(self) -> None:
+        self.metadata: dict[str, object] = {}
+
+    def to_dict(self) -> dict[str, object]:
+        return {"metadata": self.metadata}
+
+
+def test_train_router_command_prints_sync_config_reminder(
+    monkeypatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dataset = tmp_path / "router_dataset.jsonl"
+    dataset.write_text('{"prompt": "hi", "label": "local"}\n', encoding="utf-8")
+
+    monkeypatch.setattr(
+        "switchboard.training.train_router.train_from_files",
+        lambda **kwargs: training_report(),
+    )
+
+    train_router_command(
+        argparse.Namespace(
+            dataset=str(dataset),
+            output=str(tmp_path / "router_weights.json"),
+            embedding_model="nomic-embed-text",
+            external=False,
+            augment=False,
+            augment_limit=None,
+        )
+    )
+
+    assert "Reminder: run `make sync-config`" in capsys.readouterr().out
+
+
+def test_train_dispatcher_command_prints_sync_config_reminder(
+    monkeypatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        "switchboard.training.tool_dispatcher_dataset."
+        "load_or_build_dispatcher_dataset",
+        lambda path: [],
+    )
+    monkeypatch.setattr(
+        "switchboard.training.train_router.train",
+        lambda *args, **kwargs: (FakeWeights(), training_report()),
+    )
+
+    train_dispatcher_command(
+        argparse.Namespace(
+            dataset=str(tmp_path / "dispatcher.jsonl"),
+            output=str(tmp_path / "tool_dispatcher_weights.json"),
+            embedding_model="nomic-embed-text",
+        )
+    )
+
+    assert "Reminder: run `make sync-config`" in capsys.readouterr().out
+
+
+def test_train_sensitivity_command_prints_sync_config_reminder(
+    monkeypatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        "switchboard.training.train_router.train",
+        lambda *args, **kwargs: (FakeWeights(), training_report()),
+    )
+
+    train_sensitivity_command(
+        argparse.Namespace(
+            output=str(tmp_path / "sensitivity_weights.json"),
+            embedding_model="nomic-embed-text",
+        )
+    )
+
+    assert "Reminder: run `make sync-config`" in capsys.readouterr().out
+
+
 def test_backend_error_hint_for_unsupported_codex_model() -> None:
     response = SwitchboardResponse(
         request_id="req_test",

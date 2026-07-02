@@ -1001,6 +1001,10 @@ def configured_embedding_model(cli_value: str | None) -> str:
     return config.preferences.embedding_model
 
 
+def print_sync_config_reminder() -> None:
+    print("Reminder: run `make sync-config` after updating config weights.")
+
+
 def train_router_command(args: argparse.Namespace) -> None:
     from switchboard.training.augment import augment_examples
     from switchboard.training.router_dataset import (
@@ -1048,6 +1052,7 @@ def train_router_command(args: argparse.Namespace) -> None:
     except (EmbeddingUnavailableError, httpx.HTTPError) as exc:
         raise _embedding_unavailable_exit(embedding_model) from exc
     print(report_to_text(report, args.output))
+    print_sync_config_reminder()
 
 
 def train_dispatcher_command(args: argparse.Namespace) -> None:
@@ -1084,6 +1089,7 @@ def train_dispatcher_command(args: argparse.Namespace) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(weights.to_dict(), indent=2), encoding="utf-8")
     print(report_to_text(report, args.output))
+    print_sync_config_reminder()
 
 
 def train_sensitivity_command(args: argparse.Namespace) -> None:
@@ -1121,6 +1127,7 @@ def train_sensitivity_command(args: argparse.Namespace) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(weights.to_dict(), indent=2), encoding="utf-8")
     print(report_to_text(report, args.output))
+    print_sync_config_reminder()
 
 
 def bench_quality_command(args: argparse.Namespace) -> None:
