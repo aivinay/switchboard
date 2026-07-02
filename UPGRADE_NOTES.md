@@ -73,6 +73,26 @@ Tests:
   training-command unavailable paths passed.
 - Phase check: `make check`, 657 collected, passed.
 
+### Phase 4 - cascade escalation after local answer-confidence check
+
+Status: done.
+
+- Added `AnswerConfidenceService`, a local yes/no self-check for successful
+  Ollama answers.
+- Added `preferences.escalation_enabled` (default `false`) and
+  `preferences.escalation_confidence_threshold` (default `0.55`).
+- Wired the stateful core path so low-confidence local answers can escalate
+  once to Codex for coding-flavored prompts or Claude Code otherwise.
+- Preserved the privacy floor: sensitive prompts never escalate to premium
+  backends; low-confidence sensitive local answers get an honest note instead.
+- Check failures fail closed to the local answer with metadata noting the
+  confidence check was unavailable.
+
+Tests:
+
+- Focused escalation tests passed.
+- Phase check: `make check`, 662 collected, passed.
+
 ## Manual Follow-Ups
 
 Recommended 2026 local pulls:
@@ -113,6 +133,14 @@ switchboard train-dispatcher --embedding-model qwen3-embedding:0.6b --output con
 switchboard train-sensitivity --embedding-model qwen3-embedding:0.6b --output config/sensitivity_weights.json
 ```
 
+Enable answer-confidence escalation:
+
+```yaml
+preferences:
+  escalation_enabled: true
+  escalation_confidence_threshold: 0.55
+```
+
 ## Draft PR Description
 
 ### Summary
@@ -128,6 +156,8 @@ privacy floor and local-first routing guarantees.
   local role mappings, and updated local-model documentation.
 - Phase 3: first-class embedding preference for learned components and semantic
   memory, task-specific embedding prompts, and fail-closed weight metadata checks.
+- Phase 4: disabled-by-default local answer-confidence check and privacy-preserving
+  one-hop escalation for weak local answers.
 
 ### Test Evidence
 
@@ -135,6 +165,7 @@ privacy floor and local-first routing guarantees.
 - Phase 1: `make check`, 648 tests collected, all passed.
 - Phase 2: `make check`, 653 tests collected, all passed.
 - Phase 3: `make check`, 657 tests collected, all passed.
+- Phase 4: `make check`, 662 tests collected, all passed.
 
 ### Invariant Checklist
 

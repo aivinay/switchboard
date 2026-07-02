@@ -16,6 +16,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added embedding-model-aware learned routing, dispatcher, sensitivity, and
   semantic-memory embedding calls, including task prefixes and fail-closed
   weight metadata checks.
+- Added disabled-by-default local answer-confidence checks with one-hop premium
+  escalation for low-confidence non-sensitive Ollama answers.
 
 ### Fixed
 - Made `switchboard route` previews honor private mode when Ollama is

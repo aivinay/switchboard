@@ -25,6 +25,7 @@ from switchboard.app.models.internal import NormalizedRequest
 from switchboard.app.models.telemetry import BackendMetricRecord
 from switchboard.app.providers.base import ProviderResponse
 from switchboard.app.providers.ollama import OllamaProviderAdapter
+from switchboard.app.services.answer_confidence import AnswerConfidenceResult
 from switchboard.app.services.container import build_container
 from switchboard.app.services.cost import CostEstimator
 from switchboard.app.services.semantic_memory import EmbeddingUnavailableError
@@ -131,6 +132,7 @@ def switchboard_request(prompt: str = "Explain this") -> SwitchboardRequest:
 def make_core_service(
     tmp_path: Path,
     registry: BackendRegistry,
+    **kwargs,
 ) -> SwitchboardCoreService:
     settings = Settings(
         environment="test",
@@ -147,6 +149,7 @@ def make_core_service(
         registry=registry,
         metrics=container.backend_metrics_repository,
         container=container,
+        **kwargs,
     )
 
 
@@ -1260,6 +1263,173 @@ def test_core_route_preview_keeps_sensitive_content_local(tmp_path: Path) -> Non
 
     assert decision.backend == "ollama"
     assert "Private mode detected sensitive content" in decision.routing_reason
+
+
+class RecordingAdapter(FakeAdapter):
+    def __init__(
+        self,
+        name: str,
+        *,
+        content: str,
+        available: bool = True,
+        cost_type: BackendCostType = BackendCostType.LOCAL,
+    ) -> None:
+        super().__init__(name, available=available, cost_type=cost_type)
+        self.content = content
+        self.prompts: list[str] = []
+
+    def ask(self, request: SwitchboardRequest) -> SwitchboardResponse:
+        self.prompts.append(request.prompt)
+        return SwitchboardResponse(
+            request_id=request.request_id,
+            backend=self.name,
+            content=self.content,
+            stdout=self.content,
+            latency_ms=9,
+            success=True,
+            cost_type=self.cost_type,
+            estimated_cost_usd=0.0,
+            selected_model=request.model,
+        )
+
+
+class FakeConfidence:
+    def __init__(self, result: AnswerConfidenceResult) -> None:
+        self.result = result
+        self.calls = 0
+
+    def check(self, **kwargs) -> AnswerConfidenceResult:  # noqa: ANN003
+        self.calls += 1
+        return self.result
+
+
+def test_confidence_escalation_disabled_by_default(tmp_path: Path) -> None:
+    confidence = FakeConfidence(AnswerConfidenceResult(passed=False, score=0.1))
+    ollama = RecordingAdapter("ollama", content="weak local answer")
+    claude = RecordingAdapter(
+        "claude-code",
+        content="premium answer",
+        cost_type=BackendCostType.SUBSCRIPTION,
+    )
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry({"ollama": ollama, "claude-code": claude}),
+        answer_confidence=confidence,  # type: ignore[arg-type]
+    )
+
+    response = service.ask("Summarise this note: one fact.")
+
+    assert response.backend == "ollama"
+    assert response.content == "weak local answer"
+    assert confidence.calls == 0
+    assert claude.prompts == []
+
+
+def test_low_confidence_local_answer_escalates_to_premium(tmp_path: Path) -> None:
+    confidence = FakeConfidence(
+        AnswerConfidenceResult(passed=False, score=0.2, latency_ms=4, verdict="NO")
+    )
+    ollama = RecordingAdapter("ollama", content="weak local answer")
+    claude = RecordingAdapter(
+        "claude-code",
+        content="premium answer",
+        cost_type=BackendCostType.SUBSCRIPTION,
+    )
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry({"ollama": ollama, "claude-code": claude}),
+        answer_confidence=confidence,  # type: ignore[arg-type]
+    )
+    service.container.personal_config.preferences.escalation_enabled = True
+
+    response = service.ask("Summarise this note: one fact.")
+    record = service.metrics_list(limit=1)[0]
+
+    assert response.backend == "claude-code"
+    assert response.content == "premium answer"
+    assert confidence.calls == 1
+    assert len(claude.prompts) == 1
+    assert record.metadata["answer_confidence_escalated"] is True
+    assert record.metadata["answer_confidence_escalated_from"] == "ollama"
+    assert record.metadata["answer_confidence_escalated_to"] == "claude-code"
+
+
+def test_coding_flavored_local_answer_escalates_to_codex(tmp_path: Path) -> None:
+    confidence = FakeConfidence(
+        AnswerConfidenceResult(passed=False, score=0.2, latency_ms=4, verdict="NO")
+    )
+    ollama = RecordingAdapter("ollama", content="weak local answer")
+    codex = RecordingAdapter(
+        "codex",
+        content="codex answer",
+        cost_type=BackendCostType.SUBSCRIPTION,
+    )
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry({"ollama": ollama, "codex": codex}),
+        answer_confidence=confidence,  # type: ignore[arg-type]
+    )
+    service.container.personal_config.preferences.escalation_enabled = True
+
+    response = service.ask("Locally debug this Python error: TypeError")
+    record = service.metrics_list(limit=1)[0]
+
+    assert response.backend == "codex"
+    assert response.content == "codex answer"
+    assert record.metadata["answer_confidence_escalated_to"] == "codex"
+
+
+def test_sensitive_low_confidence_answer_never_escalates(tmp_path: Path) -> None:
+    confidence = FakeConfidence(
+        AnswerConfidenceResult(passed=False, score=0.2, latency_ms=4, verdict="NO")
+    )
+    ollama = RecordingAdapter("ollama", content="weak local answer")
+    claude = RecordingAdapter(
+        "claude-code",
+        content="premium answer",
+        cost_type=BackendCostType.SUBSCRIPTION,
+    )
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry({"ollama": ollama, "claude-code": claude}),
+        answer_confidence=confidence,  # type: ignore[arg-type]
+    )
+    service.container.personal_config.preferences.escalation_enabled = True
+
+    response = service.ask("Summarise my private medical record.")
+    record = service.metrics_list(limit=1)[0]
+
+    assert response.backend == "ollama"
+    assert "private mode keeps this request on the local model" in (response.content or "")
+    assert claude.prompts == []
+    assert record.metadata["answer_confidence_escalated"] is False
+    assert record.metadata["answer_confidence_sensitive_blocked"] is True
+
+
+def test_confidence_check_failure_does_not_escalate(tmp_path: Path) -> None:
+    confidence = FakeConfidence(
+        AnswerConfidenceResult(passed=True, score=1.0, error="check unavailable")
+    )
+    ollama = RecordingAdapter("ollama", content="local answer")
+    claude = RecordingAdapter(
+        "claude-code",
+        content="premium answer",
+        cost_type=BackendCostType.SUBSCRIPTION,
+    )
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry({"ollama": ollama, "claude-code": claude}),
+        answer_confidence=confidence,  # type: ignore[arg-type]
+    )
+    service.container.personal_config.preferences.escalation_enabled = True
+
+    response = service.ask("Summarise this note: one fact.")
+    record = service.metrics_list(limit=1)[0]
+
+    assert response.backend == "ollama"
+    assert claude.prompts == []
+    assert record.metadata["answer_confidence_unavailable"] is True
+    assert record.metadata["answer_confidence_escalated"] is False
 
 
 def test_core_route_preview_blocks_sensitive_content_when_ollama_unavailable(

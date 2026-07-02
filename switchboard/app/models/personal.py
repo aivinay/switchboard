@@ -55,6 +55,9 @@ class PersonalPreferences(BaseModel):
     # Headroom-style heuristic prompt compression before routing.
     compression_enabled: bool = False
     compression_threshold_tokens: int = 1000
+    # Optional post-answer local confidence check and premium escalation.
+    escalation_enabled: bool = False
+    escalation_confidence_threshold: float = 0.55
     # Embedding-based long-term semantic memory (local embeddings only).
     semantic_memory_enabled: bool = False
     semantic_memory_top_k: int = 3

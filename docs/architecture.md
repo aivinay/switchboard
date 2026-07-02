@@ -32,6 +32,9 @@ Compression layer
 Adapters: Ollama / Codex CLI / Claude Code
   |
   v
+Optional local answer-confidence check
+  |
+  v
 Response sanitizer + metadata-only metrics + evaluation hooks
 ```
 
@@ -63,6 +66,10 @@ force unavailable backends, skip tool verification, or bypass provider boundarie
 - Adapters: Codex and Claude Code are local CLI adapters that call user-authenticated
   tools; Ollama runs local models. Switchboard does not automate subscription web UIs or
   resell API access.
+- Answer confidence: when `escalation_enabled=true`, successful auto-routed Ollama
+  answers can receive one local yes/no confidence check. Low-confidence non-sensitive
+  answers may escalate once to Codex for coding-flavored prompts or Claude Code
+  otherwise. Sensitive prompts never escalate; the local answer gets an honest note.
 - Metrics + Evaluation: backend calls record metadata-only metrics. Mock evals verify
   structure, real smoke evals verify local integration, provider smoke evals check
   configured live-data providers, and the quality benchmark measures routing conditions.

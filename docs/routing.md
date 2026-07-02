@@ -12,6 +12,8 @@ Personal routing is intentionally explicit and testable. The router recommends o
 - `router_mode: "learned"` in the shipped personal config, with deterministic rules as
   the fallback when weights are missing or confidence is low.
 - `compression_enabled: true`
+- `escalation_enabled: false`
+- `escalation_confidence_threshold: 0.55`
 - `semantic_memory_enabled: true`
 
 ## Default Behaviour
@@ -42,6 +44,19 @@ When private mode flags a prompt as sensitive and Ollama is unavailable, `switch
 route` keeps the recommendation on Ollama and explains that execution would refuse the
 request. It must not preview Codex or Claude as a fallback for sensitive content, because
 the privacy floor is final.
+
+## Optional Answer-Confidence Cascade
+
+Set `escalation_enabled: true` to let the stateful core path check successful local
+Ollama answers before returning them. The check is one short local follow-up prompt that
+asks whether the answer is correct, complete, and responsive. If the score is below
+`escalation_confidence_threshold`, Switchboard can escalate once to Codex for
+coding-flavored prompts or Claude Code otherwise, but only when that backend is available.
+
+Sensitive prompts never escalate to premium backends. If the local confidence check is
+low for sensitive content, Switchboard keeps the local answer and appends a note saying
+private mode prevented premium escalation. Check failures also fail closed: the local
+answer is returned and metadata records that confidence checking was unavailable.
 
 ## CLI Explanations And Reason Codes
 

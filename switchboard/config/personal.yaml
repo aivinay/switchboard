@@ -35,6 +35,9 @@ preferences:
   # Headroom-style heuristic prompt compression before routing.
   compression_enabled: true
   compression_threshold_tokens: 1000
+  # Optional low-confidence cascade from local answers to premium CLI backends.
+  escalation_enabled: false
+  escalation_confidence_threshold: 0.55
   # Embedding-based long-term semantic memory (local embeddings only).
   semantic_memory_enabled: true
   semantic_memory_top_k: 3

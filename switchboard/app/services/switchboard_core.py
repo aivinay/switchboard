@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 
+from switchboard.app.backends.base import AgentAdapter
 from switchboard.app.backends.registry import BackendRegistry
 from switchboard.app.models.api import ChatMessage
 from switchboard.app.models.backends import (
@@ -22,6 +23,10 @@ from switchboard.app.models.capabilities import (
 from switchboard.app.models.internal import NormalizedRequest, RoutingMode, Sensitivity
 from switchboard.app.models.sessions import ChatMessageRead, ChatSessionRead
 from switchboard.app.models.telemetry import BackendMetricRead, BackendMetricRecord
+from switchboard.app.services.answer_confidence import (
+    AnswerConfidenceResult,
+    AnswerConfidenceService,
+)
 from switchboard.app.services.capabilities import CapabilityDetector
 from switchboard.app.services.compression_layer import (
     CompressionLayer,
@@ -68,6 +73,7 @@ class SwitchboardCoreService:
         semantic_memory: SemanticMemoryService | None = None,
         tool_dispatcher: LearnedToolDispatcher | None = None,
         sensitivity_escalator: LearnedSensitivityEscalator | None = None,
+        answer_confidence: AnswerConfidenceService | None = None,
     ) -> None:
         self.registry = registry
         self.metrics = metrics
@@ -88,6 +94,7 @@ class SwitchboardCoreService:
         self.semantic_memory = semantic_memory
         self.tool_dispatcher = tool_dispatcher
         self.sensitivity_escalator = sensitivity_escalator
+        self.answer_confidence = answer_confidence or AnswerConfidenceService()
 
     def backends(self) -> list[BackendInfo]:
         return self.registry.list_backends()
@@ -383,6 +390,15 @@ class SwitchboardCoreService:
                 response.content,
                 user_prompt=prompt,
             )
+        if response.success and response.content:
+            response = self._maybe_escalate_low_confidence_answer(
+                request=request,
+                backend_request=backend_request,
+                response=response,
+                decision=decision,
+                local_adapter=adapter,
+            )
+            response.session_id = session.session_id
         self._finalize_response_metadata(request, response)
         if response.success and response.content:
             assistant_message = self._store_assistant_message(
@@ -398,6 +414,146 @@ class SwitchboardCoreService:
             request.metadata["assistant_message_id"] = assistant_message.message_id
         self._record(request, response)
         return response
+
+    def _maybe_escalate_low_confidence_answer(
+        self,
+        *,
+        request: SwitchboardRequest,
+        backend_request: SwitchboardRequest,
+        response: SwitchboardResponse,
+        decision: BackendRouteDecision,
+        local_adapter: AgentAdapter,
+    ) -> SwitchboardResponse:
+        preferences = self.container.personal_config.preferences
+        request.metadata["answer_confidence_escalated"] = False
+        if (
+            not preferences.escalation_enabled
+            or response.backend != "ollama"
+            or decision.forced_backend
+            or request.metadata.get("sticky_followup")
+            or request.metadata.get("answer_confidence_checked")
+        ):
+            return response
+        threshold = preferences.escalation_confidence_threshold
+        request.metadata["answer_confidence_checked"] = True
+        result = self.answer_confidence.check(
+            adapter=local_adapter,
+            request=request,
+            answer=response.content or "",
+            threshold=threshold,
+            selected_model=response.selected_model,
+        )
+        self._attach_confidence_metadata(
+            request=request,
+            result=result,
+            threshold=threshold,
+        )
+        if result.unavailable or result.passed:
+            return response
+
+        sensitive = self._content_is_sensitive(request)
+        target = self._confidence_escalation_target(request, decision)
+        request.metadata["answer_confidence_escalation_target"] = target
+        if sensitive or request.metadata.get("private_mode_would_block"):
+            request.metadata["answer_confidence_sensitive_blocked"] = True
+            note = (
+                "\n\nNote: Switchboard's local confidence check was low, but private "
+                "mode keeps this request on the local model instead of escalating it "
+                "to a subscription backend."
+            )
+            original_content = response.content or ""
+            original_stdout = response.stdout or original_content
+            response.content = f"{original_content}{note}"
+            response.stdout = f"{original_stdout}{note}"
+            response.routing_reason = (
+                f"{response.routing_reason} Local confidence was low; private mode "
+                "blocked premium escalation."
+            )
+            return response
+        if target is None or not self._is_available(target):
+            request.metadata["answer_confidence_escalation_unavailable"] = True
+            return response
+
+        target_adapter = self.registry.get(target)
+        if target_adapter is None:
+            request.metadata["answer_confidence_escalation_unavailable"] = True
+            return response
+        escalation_request = backend_request.model_copy(
+            update={
+                "model": None,
+                "metadata": {
+                    **backend_request.metadata,
+                    "answer_confidence_escalation": True,
+                    "escalated_from_backend": response.backend,
+                    "escalation_target": target,
+                },
+            }
+        )
+        try:
+            escalated = target_adapter.ask(escalation_request)
+        except Exception as exc:
+            request.metadata["answer_confidence_escalation_error"] = (
+                f"{type(exc).__name__}: {exc}"
+            )
+            return response
+        request.metadata["answer_confidence_added_latency_ms"] = (
+            result.latency_ms + escalated.latency_ms
+        )
+        if not escalated.success:
+            request.metadata["answer_confidence_escalation_error"] = (
+                escalated.error_message or "escalation backend failed"
+            )
+            return response
+        escalated.content = self.response_sanitizer.sanitize(
+            escalated.content,
+            user_prompt=request.prompt,
+        )
+        escalated.routing_reason = (
+            f"{decision.routing_reason} Local answer confidence score "
+            f"{result.score:.2f} was below {threshold:.2f}; escalated to {target}."
+        )
+        request.metadata.update(
+            {
+                "answer_confidence_escalated": True,
+                "answer_confidence_escalated_from": response.backend,
+                "answer_confidence_escalated_to": target,
+                "answer_confidence_original_model": response.selected_model or "",
+                "answer_confidence_added_latency_ms": result.latency_ms
+                + escalated.latency_ms,
+            }
+        )
+        return escalated
+
+    def _attach_confidence_metadata(
+        self,
+        *,
+        request: SwitchboardRequest,
+        result: AnswerConfidenceResult,
+        threshold: float,
+    ) -> None:
+        request.metadata.update(
+            {
+                "answer_confidence_score": result.score,
+                "answer_confidence_threshold": threshold,
+                "answer_confidence_passed": result.passed,
+                "answer_confidence_latency_ms": result.latency_ms,
+                "answer_confidence_unavailable": result.unavailable,
+            }
+        )
+        if result.verdict:
+            request.metadata["answer_confidence_verdict"] = result.verdict[:32]
+        if result.error:
+            request.metadata["answer_confidence_error"] = result.error
+
+    def _confidence_escalation_target(
+        self,
+        request: SwitchboardRequest,
+        decision: BackendRouteDecision,
+    ) -> str | None:
+        detected = set(request.metadata.get("detected_capabilities") or [])
+        if decision.route_type == "coding" or Capability.CODING.value in detected:
+            return "codex"
+        return "claude-code"
 
     def _resolve_followup_prompt(
         self,
