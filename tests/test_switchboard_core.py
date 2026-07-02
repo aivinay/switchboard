@@ -40,6 +40,7 @@ from switchboard.cli import (
     backend_error_hint,
     backends_command,
     doctor_command,
+    main,
     make_parser,
     metrics_command,
     quota_command,
@@ -47,6 +48,7 @@ from switchboard.cli import (
     train_dispatcher_command,
     train_router_command,
     train_sensitivity_command,
+    version_command,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1407,6 +1409,49 @@ def test_cli_route_rejects_manual_catalogue_ids() -> None:
 def test_public_core_cli_rejects_personal_only_flags(argv: list[str]) -> None:
     with pytest.raises(SystemExit):
         make_parser().parse_args(argv)
+
+
+def test_version_command_prints_installed_version(capsys) -> None:
+    version_command(argparse.Namespace())
+
+    assert "Switchboard 0.3.0" in capsys.readouterr().out
+
+
+def test_version_command_reports_cached_newer_release(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+) -> None:
+    cache_dir = tmp_path / "config-home"
+    switchboard_dir = cache_dir / "switchboard"
+    switchboard_dir.mkdir(parents=True)
+    (switchboard_dir / "update-check.json").write_text(
+        '{"latest": "9.9.9", "checked_at": "2026-07-02T00:00:00+00:00"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SWITCHBOARD_CONFIG_HOME", str(cache_dir))
+
+    version_command(argparse.Namespace())
+
+    output = capsys.readouterr().out
+    assert "Switchboard 0.3.0" in output
+    assert "latest on PyPI: 9.9.9" in output
+    assert "switchboard upgrade" in output
+
+
+def test_global_version_flag_prints_version(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.setattr("sys.argv", ["switchboard", "--version"])
+
+    main()
+
+    assert "Switchboard 0.3.0" in capsys.readouterr().out
+
+
+def test_main_without_command_still_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["switchboard"])
+
+    with pytest.raises(SystemExit):
+        main()
 
 
 def test_core_route_preview_and_auto_ask_choose_same_backend(tmp_path: Path) -> None:

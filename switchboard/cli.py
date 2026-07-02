@@ -12,6 +12,7 @@ from typing import Any, cast
 
 import httpx
 
+from switchboard import __version__
 from switchboard.app.backends.registry import BackendRegistry
 from switchboard.app.core.config import (
     DEFAULT_CONFIG_FILES,
@@ -51,6 +52,7 @@ from switchboard.app.services.provider_status import (
 )
 from switchboard.app.services.semantic_memory import EmbeddingUnavailableError
 from switchboard.app.services.switchboard_core import SwitchboardCoreService
+from switchboard.app.services.update_check import VersionStatus, cached_version_status
 from switchboard.app.storage.db import create_db_engine, init_db
 from switchboard.evals.quality_bench import (
     DEFAULT_CONDITIONS,
@@ -114,6 +116,16 @@ def print_json(payload: Any) -> None:
     if hasattr(payload, "model_dump"):
         payload = payload.model_dump(mode="json")
     print(json.dumps(payload, indent=2))
+
+
+def print_version_status(status: VersionStatus) -> None:
+    print(f"Switchboard {status.installed}")
+    if status.update_available and status.latest:
+        print(f"latest on PyPI: {status.latest} — run: switchboard upgrade")
+
+
+def version_command(args: argparse.Namespace) -> None:
+    print_version_status(cached_version_status(__version__))
 
 
 USER_REASON_LABELS = {
@@ -1443,7 +1455,16 @@ def add_eval_arguments(parser: argparse.ArgumentParser) -> None:
 
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="switchboard")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument(
+        "--version",
+        action="store_true",
+        dest="show_version",
+        help="Show the installed Switchboard version",
+    )
+    subparsers = parser.add_subparsers(dest="command")
+
+    version = subparsers.add_parser("version", help="Show the installed Switchboard version")
+    version.set_defaults(func=version_command)
 
     route = subparsers.add_parser(
         "route",
@@ -1735,6 +1756,11 @@ def make_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = make_parser()
     args = parser.parse_args()
+    if args.show_version:
+        version_command(args)
+        return
+    if not hasattr(args, "func"):
+        parser.error("the following arguments are required: command")
     args.func(args)
 
 
