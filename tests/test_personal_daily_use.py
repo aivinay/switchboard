@@ -140,10 +140,11 @@ def test_model_catalogue_includes_recommended_ollama_pack() -> None:
     model_ids = {model.model_id for model in catalogue.models}
 
     assert "ollama/llama3.2:3b" in model_ids
-    assert "ollama/qwen3:8b" in model_ids
-    assert "ollama/qwen2.5-coder:7b" in model_ids
-    assert "ollama/deepseek-r1:8b" in model_ids
-    assert "ollama/gemma3:12b" in model_ids
+    assert "ollama/gemma4:e4b" in model_ids
+    assert "ollama/gemma4:12b" in model_ids
+    assert "ollama/qwen3.5:9b" in model_ids
+    assert "ollama/gpt-oss:20b" in model_ids
+    assert "ollama/embeddinggemma" in model_ids
     assert "ollama/nomic-embed-text" in model_ids
     llama = catalogue.get("ollama/llama3.2:3b")
     nomic = catalogue.get("ollama/nomic-embed-text")
@@ -153,8 +154,8 @@ def test_model_catalogue_includes_recommended_ollama_pack() -> None:
     assert nomic.kind == ModelKind.LOCAL_EMBEDDING
     assert nomic.quality_tier == QualityTier.EMBEDDING
     assert nomic.must_never_be_selected_for_chat
-    assert not catalogue.get("ollama/gemma3:12b").enabled  # type: ignore[union-attr]
-    assert not catalogue.get("ollama/qwen2.5-coder:14b").enabled  # type: ignore[union-attr]
+    assert not catalogue.get("ollama/gemma4:31b").enabled  # type: ignore[union-attr]
+    assert not catalogue.get("ollama/qwen3-coder:30b").enabled  # type: ignore[union-attr]
 
 
 def test_default_personal_config_enables_ollama() -> None:
@@ -249,16 +250,16 @@ def test_loaded_embedding_model_is_never_reused_for_chat(
     response = client.post("/personal/route", json={"prompt": "Summarise this email."})
 
     assert response.status_code == 200
-    assert response.json()["recommended_model"] == "ollama/llama3.2:3b"
+    assert response.json()["recommended_model"] == "ollama/gemma4:e4b"
 
 
-def test_local_simple_tasks_prefer_llama32_when_ollama_enabled(tmp_path: Path) -> None:
+def test_local_simple_tasks_prefer_gemma4_e4b_when_ollama_enabled(tmp_path: Path) -> None:
     client = personal_client(tmp_path, personal_config(tmp_path, ollama=True))
 
     response = client.post("/personal/route", json={"prompt": "Summarise this email."})
 
     assert response.status_code == 200
-    assert response.json()["recommended_model"] == "ollama/llama3.2:3b"
+    assert response.json()["recommended_model"] == "ollama/gemma4:e4b"
 
 
 def test_hot_general_model_is_reused_for_simple_summary(
@@ -268,7 +269,7 @@ def test_hot_general_model_is_reused_for_simple_summary(
     monkeypatch.setattr(
         OllamaRuntimeService,
         "list_loaded_models",
-        lambda self: {"ollama/qwen3:8b"},
+        lambda self: {"ollama/gemma4:12b"},
     )
     client = personal_client(tmp_path, personal_config(tmp_path, ollama=True))
 
@@ -276,7 +277,7 @@ def test_hot_general_model_is_reused_for_simple_summary(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["recommended_model"] == "ollama/qwen3:8b"
+    assert body["recommended_model"] == "ollama/gemma4:12b"
     assert body["selected_model_loaded"]
     assert body["model_switch_avoided"]
     assert not body["cold_start_expected"]
@@ -293,10 +294,10 @@ def test_coding_prefers_qwen_coder_when_ollama_enabled(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json()["recommended_model"] == "ollama/qwen2.5-coder:7b"
+    assert response.json()["recommended_model"] == "ollama/qwen3.5:9b"
 
 
-def test_general_reasoning_prefers_qwen3_when_ollama_enabled(tmp_path: Path) -> None:
+def test_general_reasoning_prefers_gemma4_when_ollama_enabled(tmp_path: Path) -> None:
     client = personal_client(tmp_path, personal_config(tmp_path, ollama=True))
 
     response = client.post(
@@ -306,7 +307,7 @@ def test_general_reasoning_prefers_qwen3_when_ollama_enabled(tmp_path: Path) -> 
 
     assert response.status_code == 200
     body = response.json()
-    assert body["recommended_model"] == "ollama/qwen3:8b"
+    assert body["recommended_model"] == "ollama/gemma4:12b"
     assert "OLLAMA_GENERAL_MODEL_SELECTED" in body["reason_codes"]
 
 
@@ -317,7 +318,7 @@ def test_coding_does_not_reuse_non_coding_hot_model(
     monkeypatch.setattr(
         OllamaRuntimeService,
         "list_loaded_models",
-        lambda self: {"ollama/qwen3:8b"},
+        lambda self: {"ollama/gemma4:12b"},
     )
     client = personal_client(tmp_path, personal_config(tmp_path, ollama=True))
 
@@ -328,7 +329,7 @@ def test_coding_does_not_reuse_non_coding_hot_model(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["recommended_model"] == "ollama/qwen2.5-coder:7b"
+    assert body["recommended_model"] == "ollama/qwen3.5:9b"
     assert not body["selected_model_loaded"]
     assert body["cold_start_expected"]
     assert "SPECIALIST_MODEL_SWITCH_JUSTIFIED" in body["reason_codes"]
@@ -341,7 +342,7 @@ def test_memory_saver_reuses_loaded_good_enough_model(
     monkeypatch.setattr(
         OllamaRuntimeService,
         "list_loaded_models",
-        lambda self: {"ollama/qwen3:8b"},
+        lambda self: {"ollama/gemma4:12b"},
     )
     client = personal_client(
         tmp_path,
@@ -357,7 +358,7 @@ def test_memory_saver_reuses_loaded_good_enough_model(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["recommended_model"] == "ollama/qwen3:8b"
+    assert body["recommended_model"] == "ollama/gemma4:12b"
     assert body["performance_mode"] == "memory_saver"
     assert "MEMORY_SAVER_MODE_ACTIVE" in body["reason_codes"]
     assert "MODEL_SWITCH_AVOIDED" in body["reason_codes"]
@@ -370,7 +371,7 @@ def test_balanced_mode_uses_loaded_coding_specialist(
     monkeypatch.setattr(
         OllamaRuntimeService,
         "list_loaded_models",
-        lambda self: {"ollama/qwen3:8b", "ollama/qwen2.5-coder:7b"},
+        lambda self: {"ollama/gemma4:12b", "ollama/qwen3.5:9b"},
     )
     client = personal_client(
         tmp_path,
@@ -384,7 +385,7 @@ def test_balanced_mode_uses_loaded_coding_specialist(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["recommended_model"] == "ollama/qwen2.5-coder:7b"
+    assert body["recommended_model"] == "ollama/qwen3.5:9b"
     assert body["selected_model_loaded"]
     assert body["performance_mode"] == "balanced"
     assert "BALANCED_RUNTIME_MODE_ACTIVE" in body["reason_codes"]
@@ -406,7 +407,7 @@ def test_private_complex_reasoning_prefers_local_reasoning_model(tmp_path: Path)
 
     assert response.status_code == 200
     body = response.json()
-    assert body["recommended_model"] == "ollama/deepseek-r1:8b"
+    assert body["recommended_model"] == "ollama/gpt-oss:20b"
     assert body["route_kind"] == "local"
     assert "PERSONAL_PRIVATE_MODE_CLOUD_BLOCKED" in body["reason_codes"]
 
@@ -426,7 +427,7 @@ def test_sensitive_simple_task_uses_medium_local_not_frontier(tmp_path: Path) ->
 
     assert response.status_code == 200
     body = response.json()
-    assert body["recommended_model"] == "ollama/qwen3:8b"
+    assert body["recommended_model"] == "ollama/gemma4:12b"
     assert body["route_kind"] == "local"
     assert "SENSITIVE_BUT_SIMPLE_TASK" in body["reason_codes"]
     assert "SENSITIVITY_DOES_NOT_IMPLY_FRONTIER" in body["reason_codes"]
@@ -463,7 +464,7 @@ def test_switchboard_ask_uses_ollama_when_available(
     body = response.json()
     assert body["status"] == "called"
     assert body["answer"] == "Three concise bullets from the real local model."
-    assert body["recommendation"]["recommended_model"] == "ollama/llama3.2:3b"
+    assert body["recommendation"]["recommended_model"] == "ollama/gemma4:e4b"
     assert "Mock response from" not in body["answer"]
 
 
@@ -569,7 +570,7 @@ def test_cli_ask_output_distinguishes_ollama_provider(
     )
 
     output = capsys.readouterr().out
-    assert "Model: ollama/llama3.2:3b" in output
+    assert "Model: ollama/gemma4:e4b" in output
     assert "Provider: Ollama" in output
     assert "Provider status:" not in output
     assert "Route: local model" in output
@@ -586,7 +587,7 @@ def test_cli_ask_output_distinguishes_ollama_provider(
             request_id=request_id_match.group(1),
             rating="too-weak",
             note="Needed stricter grounding.",
-            preferred_model="ollama/qwen3:8b",
+            preferred_model="ollama/gemma4:12b",
         )
     )
     feedback_output = capsys.readouterr().out
@@ -789,7 +790,7 @@ def test_five_bullet_short_source_with_speculative_padding_warns(
     assert body["recommendation"]["route_kind"] == "local"
     assert body["recommendation"]["called_model"]
     assert body["recommendation"]["recommended_provider"] == "ollama"
-    assert "switchboard ask '<same prompt>' --force-model ollama/qwen3:8b" in body[
+    assert "switchboard ask '<same prompt>' --force-model ollama/gemma4:12b" in body[
         "suggested_next_step"
     ]
     premium_suggestion = "switchboard ask '<same prompt>' --backend claude-code"
@@ -906,7 +907,7 @@ def test_disabled_force_model_returns_clear_error(tmp_path: Path) -> None:
         "/personal/route",
         json={
             "prompt": "Debug this Python error.",
-            "force_model": "ollama/qwen2.5-coder:14b",
+            "force_model": "ollama/qwen3-coder:30b",
         },
     )
 

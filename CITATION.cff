@@ -8,8 +8,8 @@ authors:
 repository-code: "https://github.com/aivinay/switchboard"
 url: "https://github.com/aivinay/switchboard"
 license: MIT
-version: 0.2.3
-date-released: "2026-07-01"
+version: 0.3.0
+date-released: "2026-07-02"
 keywords:
   - LLM routing
   - local-first AI

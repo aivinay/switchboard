@@ -109,7 +109,7 @@ For summaries, local models are instructed to:
 Examples:
 
 ```bash
-switchboard ask "Give me exactly three bullets: ..." --force-model ollama/qwen3:8b
+switchboard ask "Give me exactly three bullets: ..." --force-model ollama/gemma4:12b
 switchboard route "Create a board-level risk analysis" --force-model claude-code
 ```
 

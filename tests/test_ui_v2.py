@@ -83,6 +83,9 @@ def test_stream_metadata_includes_routing_transparency(
         assert event["cost_type"] == "local"
         assert event["selected_model"] == "ollama/test-model"
         assert event["routing_reason"]
+        assert event["route_type"] in {"local", "forced"}
+        assert event["privacy_floor"] is False
+        assert event["tool_grounded"] is False
 
 
 def test_history_returns_past_turns_with_request_ids(
@@ -102,6 +105,7 @@ def test_history_returns_past_turns_with_request_ids(
     assert assistant["content"] == "ollama says hello"
     assert assistant["request_id"]
     assert assistant["display_model"] == "Ollama"
+    assert assistant["routing"]["route_type"] in {"local", "forced"}
 
 
 def test_history_for_unknown_session_is_empty(client: TestClient) -> None:

@@ -70,27 +70,74 @@ models:
     notes: "Default local chat model: fast and light for daily summaries,
       rewrites, and chat. Heavier local options below are opt-in."
     enabled: true
-  - model_id: ollama/qwen3:8b
+  - model_id: ollama/gemma4:e4b
     provider: ollama
-    provider_model_name: qwen3:8b
-    display_name: Ollama Qwen3 8B
+    provider_model_name: gemma4:e4b
+    display_name: Ollama Gemma 4 E4B
     kind: local
-    context_window: 32768
+    context_window: 128000
     cost_per_million_input_tokens: 0.00
     cost_per_million_output_tokens: 0.00
-    average_latency_ms: 850
+    average_latency_ms: 500
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: small
+    good_for: ["general", "summarisation", "classification", "extraction", "rewrite", "simple_qa"]
+    notes: "Fast 2026 general/chat model for <=16 GB machines."
+    enabled: true
+  - model_id: ollama/gemma4:12b
+    provider: ollama
+    provider_model_name: gemma4:12b
+    display_name: Ollama Gemma 4 12B
+    kind: local
+    context_window: 128000
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 1000
     data_policy: local
     scarce: false
     privacy: local
     quality_tier: medium
     good_for: ["general", "summarisation", "reasoning", "planning", "rewrite", "factual_qa"]
-    notes: "General local assistant for moderate reasoning and writing.
-      Thinking model: slower per answer; used as the benchmark judge."
+    notes: "Recommended 2026 general/chat model for ~32 GB machines."
     enabled: true
-  - model_id: ollama/qwen2.5-coder:7b
+  - model_id: ollama/gemma4:26b
     provider: ollama
-    provider_model_name: qwen2.5-coder:7b
-    display_name: Ollama Qwen2.5 Coder 7B
+    provider_model_name: gemma4:26b
+    display_name: Ollama Gemma 4 26B
+    kind: local
+    context_window: 128000
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 2200
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: frontier
+    good_for: ["general", "summarisation", "reasoning", "planning", "rewrite", "private_summary"]
+    notes: "MoE general/chat model for stronger local machines; disabled by default."
+    enabled: false
+  - model_id: ollama/gemma4:31b
+    provider: ollama
+    provider_model_name: gemma4:31b
+    display_name: Ollama Gemma 4 31B
+    kind: local
+    context_window: 128000
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 2800
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: frontier
+    good_for: ["general", "summarisation", "reasoning", "planning", "rewrite", "private_summary"]
+    notes: "Max-quality general/chat profile for high-memory machines; disabled by default."
+    enabled: false
+  - model_id: ollama/qwen3.5:9b
+    provider: ollama
+    provider_model_name: qwen3.5:9b
+    display_name: Ollama Qwen3.5 9B
     kind: local
     context_window: 32768
     cost_per_million_input_tokens: 0.00
@@ -100,30 +147,29 @@ models:
     scarce: false
     privacy: local
     quality_tier: medium
-    good_for: ["coding", "debugging", "code_review", "code_fixing"]
-    notes: "Default local coding and debugging model."
+    good_for: ["coding", "debugging", "code_review", "code_fixing", "reasoning"]
+    notes: "Recommended 2026 coding model for 16 GB tier machines."
     enabled: true
-  - model_id: ollama/deepseek-r1:8b
+  - model_id: ollama/qwen3.6:27b
     provider: ollama
-    provider_model_name: deepseek-r1:8b
-    display_name: Ollama DeepSeek R1 8B
+    provider_model_name: qwen3.6:27b
+    display_name: Ollama Qwen3.6 27B
     kind: local
     context_window: 32768
     cost_per_million_input_tokens: 0.00
     cost_per_million_output_tokens: 0.00
-    average_latency_ms: 1200
+    average_latency_ms: 2400
     data_policy: local
     scarce: false
     privacy: local
     quality_tier: frontier
-    good_for:
-      ["reasoning", "complex_debugging", "planning", "tradeoff_analysis", "architecture_design"]
-    notes: "Local reasoning model for complex debugging, planning, and tradeoff analysis."
-    enabled: true
-  - model_id: ollama/gemma3:12b
+    good_for: ["coding", "debugging", "code_review", "code_fixing", "reasoning"]
+    notes: "Heavier coding/reasoning model for stronger machines; disabled by default."
+    enabled: false
+  - model_id: ollama/glm-4.7-flash
     provider: ollama
-    provider_model_name: gemma3:12b
-    display_name: Ollama Gemma 3 12B
+    provider_model_name: glm-4.7-flash
+    display_name: Ollama GLM 4.7 Flash
     kind: local
     context_window: 128000
     cost_per_million_input_tokens: 0.00
@@ -133,9 +179,41 @@ models:
     scarce: false
     privacy: local
     quality_tier: frontier
-    good_for: ["summarisation", "reasoning", "planning", "rewrite", "private_summary"]
-    notes: "Optional stronger local fallback for private summaries; disabled because it is not part of the default installed pack."
+    good_for: ["general", "reasoning", "planning", "coding", "tool_routing"]
+    notes: "Fast reasoning profile; requires Ollama >= 0.14.3 and is disabled by default."
     enabled: false
+  - model_id: ollama/qwen3-coder:30b
+    provider: ollama
+    provider_model_name: qwen3-coder:30b
+    display_name: Ollama Qwen3 Coder 30B
+    kind: local
+    context_window: 32768
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 2800
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: frontier
+    good_for: ["coding", "debugging", "code_review", "code_fixing", "complex_debugging"]
+    notes: "Largest 2026 coding profile; disabled by default."
+    enabled: false
+  - model_id: ollama/gpt-oss:20b
+    provider: ollama
+    provider_model_name: gpt-oss:20b
+    display_name: Ollama GPT OSS 20B
+    kind: local
+    context_window: 32768
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 1600
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: frontier
+    good_for: ["reasoning", "complex_debugging", "planning", "tradeoff_analysis", "architecture_design"]
+    notes: "Recommended 2026 local reasoning model; fits roughly 16 GB with adjustable effort."
+    enabled: true
   - model_id: ollama/nomic-embed-text
     provider: ollama
     provider_model_name: nomic-embed-text
@@ -153,54 +231,40 @@ models:
     notes: "Embeddings and memory/search only; never selected for chat responses."
     must_never_be_selected_for_chat: true
     enabled: true
-  - model_id: ollama/qwen2.5-coder:14b
+  - model_id: ollama/embeddinggemma
     provider: ollama
-    provider_model_name: qwen2.5-coder:14b
-    display_name: Ollama Qwen2.5 Coder 14B
-    kind: local
+    provider_model_name: embeddinggemma
+    display_name: Ollama EmbeddingGemma
+    kind: local_embedding
+    context_window: 8192
+    cost_per_million_input_tokens: 0.00
+    cost_per_million_output_tokens: 0.00
+    average_latency_ms: 220
+    data_policy: local
+    scarce: false
+    privacy: local
+    quality_tier: embedding
+    good_for: ["embeddings", "memory", "search"]
+    notes: "2026 embedding model for memory/search only; never selected for chat responses."
+    must_never_be_selected_for_chat: true
+    enabled: true
+  - model_id: ollama/qwen3-embedding:0.6b
+    provider: ollama
+    provider_model_name: qwen3-embedding:0.6b
+    display_name: Ollama Qwen3 Embedding 0.6B
+    kind: local_embedding
     context_window: 32768
     cost_per_million_input_tokens: 0.00
     cost_per_million_output_tokens: 0.00
-    average_latency_ms: 1800
+    average_latency_ms: 260
     data_policy: local
     scarce: false
     privacy: local
-    quality_tier: frontier
-    good_for: ["coding", "debugging", "code_review", "code_fixing", "reasoning"]
-    notes: "Heavier coding model for stronger machines; disabled by default."
-    enabled: false
-  - model_id: ollama/deepseek-r1:14b
-    provider: ollama
-    provider_model_name: deepseek-r1:14b
-    display_name: Ollama DeepSeek R1 14B
-    kind: local
-    context_window: 32768
-    cost_per_million_input_tokens: 0.00
-    cost_per_million_output_tokens: 0.00
-    average_latency_ms: 2200
-    data_policy: local
-    scarce: false
-    privacy: local
-    quality_tier: frontier
-    good_for: ["reasoning", "planning", "debugging", "tradeoff_analysis"]
-    notes: "Heavier reasoning model for stronger machines; disabled by default."
-    enabled: false
-  - model_id: ollama/mistral-small3.2:24b
-    provider: ollama
-    provider_model_name: mistral-small3.2:24b
-    display_name: Ollama Mistral Small 3.2 24B
-    kind: local
-    context_window: 128000
-    cost_per_million_input_tokens: 0.00
-    cost_per_million_output_tokens: 0.00
-    average_latency_ms: 3000
-    data_policy: local
-    scarce: false
-    privacy: local
-    quality_tier: frontier
-    good_for: ["summarisation", "reasoning", "planning", "rewrite", "private_summary"]
-    notes: "Heavier local fallback for stronger machines; disabled by default."
-    enabled: false
+    quality_tier: embedding
+    good_for: ["embeddings", "memory", "search"]
+    notes: "Instruction-aware 2026 embedding model for memory/search only."
+    must_never_be_selected_for_chat: true
+    enabled: true
   - model_id: lmstudio/local-openai-compatible
     provider: lmstudio
     display_name: LM Studio Local OpenAI-Compatible

@@ -1,6 +1,6 @@
 [project]
 name = "switchboard-local"
-version = "0.2.3"
+version = "0.3.0"
 description = "Privacy-aware, local-first router across CLI coding agents (Codex, Claude Code) and local LLMs (Ollama)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -65,6 +65,9 @@ finance = [
 router = [
     "numpy>=1.26",
 ]
+headroom = [
+    "headroom-ai",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -78,7 +81,10 @@ target-version = "py311"
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.mypy]
-python_version = "3.11"
+# NumPy >=2.1 stubs use Python 3.12 PEP 695 `type` syntax. Mypy parses those
+# stubs before import-skipping overrides can apply, so type-check against 3.12
+# syntax even though Switchboard runtime support remains Python 3.11+.
+python_version = "3.12"
 plugins = ["pydantic.mypy"]
 warn_unused_ignores = true
 warn_redundant_casts = true

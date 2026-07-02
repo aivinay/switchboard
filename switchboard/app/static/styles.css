@@ -47,6 +47,18 @@ body {
   min-height: 48px;
 }
 
+.topbar-left,
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.topbar-actions {
+  justify-self: end;
+}
+
 h1 {
   margin: 0;
   font-size: 24px;
@@ -154,6 +166,126 @@ button {
 
 .model-option.selected .checkmark {
   visibility: visible;
+}
+
+.option-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.availability-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #b8c1d1;
+}
+
+.availability-dot.available {
+  background: #12a150;
+}
+
+.availability-dot.unavailable {
+  background: #d92d20;
+}
+
+.quota-meters {
+  display: inline-flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.quota-meter {
+  width: 96px;
+  display: grid;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+.quota-bar {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e4e8ef;
+}
+
+.quota-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #12a150;
+}
+
+.quota-bar span.constrained {
+  background: #d92d20;
+}
+
+.dashboard {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 12px;
+  box-shadow: 0 1px 3px rgb(16 24 40 / 8%);
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dashboard-grid > div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+}
+
+.metric-label {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.dashboard strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 22px;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.backend-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.usage-pill {
+  border: 1px solid #d8dee8;
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.trend {
+  display: flex;
+  align-items: end;
+  gap: 6px;
+  height: 52px;
+  margin-top: 10px;
+}
+
+.trend-bar {
+  width: 18px;
+  border-radius: 4px 4px 0 0;
+  background: #1463ff;
 }
 
 .messages {
@@ -285,13 +417,33 @@ textarea {
     grid-row: 1;
   }
 
-  .model-picker {
+  .topbar-left {
     grid-row: 2;
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .topbar-actions {
+    grid-row: 3;
+    justify-self: center;
+  }
+
+  .model-picker {
     width: 100%;
   }
 
   .model-picker-button {
     width: 100%;
+  }
+
+  .quota-meters {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
   }
 
   .composer {
@@ -306,7 +458,7 @@ textarea {
   gap: 12px;
 }
 
-.new-chat-button {
+.topbar-button {
   justify-self: end;
   border: 1px solid rgba(127, 127, 127, 0.35);
   background: transparent;
@@ -317,7 +469,7 @@ textarea {
   cursor: pointer;
 }
 
-.new-chat-button:hover {
+.topbar-button:hover {
   background: rgba(127, 127, 127, 0.12);
 }
 
@@ -396,10 +548,54 @@ textarea {
 .message-meta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 6px;
   font-size: 12px;
   opacity: 0.8;
+}
+
+.route-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.route-chip {
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: #ffffff;
+  color: #334155;
+  border: 1px solid #d8dee8;
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+.route-chip.backend {
+  border-color: #b8c1d1;
+  color: #18212f;
+  font-weight: 650;
+}
+
+.route-chip.privacy {
+  border-color: #d92d20;
+  color: #b42318;
+}
+
+.route-chip.tool {
+  border-color: #12a150;
+  color: #067647;
+}
+
+.route-chip.compressed {
+  border-color: #1463ff;
+  color: #0b4bc2;
+}
+
+.route-chip.escalated,
+.route-chip.quota {
+  border-color: #f79009;
+  color: #b54708;
 }
 
 .meta-facts {
@@ -486,4 +682,10 @@ textarea {
 .followup-ack {
   font-size: 11.5px;
   opacity: 0.7;
+}
+
+.private-mode {
+  color: #067647;
+  font-size: 12px;
+  font-weight: 650;
 }

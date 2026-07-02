@@ -98,3 +98,41 @@ def test_init_command_writes_user_config_when_defaults_are_packaged(
     assert packaged_config_path("personal.yaml").read_text(encoding="utf-8") == (
         config_dir / "personal.yaml"
     ).read_text(encoding="utf-8")
+
+
+def test_root_config_tree_matches_packaged_config() -> None:
+    root = Path(__file__).resolve().parents[1]
+    root_config = root / "config"
+    packaged_config = root / "switchboard" / "config"
+
+    config_suffixes = {".json", ".yaml"}
+    root_files = sorted(
+        path.name
+        for path in root_config.iterdir()
+        if path.is_file() and path.suffix in config_suffixes
+    )
+    packaged_files = sorted(
+        path.name
+        for path in packaged_config.iterdir()
+        if path.is_file() and path.suffix in config_suffixes
+    )
+
+    assert root_files == packaged_files
+    for name in packaged_files:
+        assert (root_config / name).read_bytes() == (packaged_config / name).read_bytes()
+
+
+def test_shipped_personal_configs_contain_safe_defaults() -> None:
+    root = Path(__file__).resolve().parents[1]
+
+    for path in (
+        root / "config" / "personal.yaml",
+        root / "switchboard" / "config" / "personal.yaml",
+    ):
+        config = PersonalConfig.from_yaml(path)
+        text = path.read_text(encoding="utf-8").lower()
+
+        assert config.profile.user_id == "local-user"
+        assert "/users/" not in text
+        assert "@" not in text
+        assert "vinay" not in text

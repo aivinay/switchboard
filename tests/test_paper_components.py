@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
+
 from switchboard.app.backends.base import AgentAdapter
 from switchboard.app.backends.registry import BackendRegistry
 from switchboard.app.core.config import Settings
@@ -21,7 +23,12 @@ from switchboard.app.services.compression_layer import (
     NoCompressionLayer,
 )
 from switchboard.app.services.container import build_container
-from switchboard.app.services.llm_router import LlmRouter
+from switchboard.app.services.core_factory import build_configured_core_service
+from switchboard.app.services.llm_router import (
+    ARCH_ROUTER_MODEL,
+    LlmRouter,
+    OllamaRouterClient,
+)
 from switchboard.app.services.semantic_memory import (
     MemoryEmbeddingRepository,
     SemanticMemoryService,
@@ -116,6 +123,114 @@ def test_llm_router_rejects_invalid_route_type() -> None:
     result = router.classify("anything")
     assert not result.success
     assert result.error is not None
+
+
+def test_arch_router_parses_policy_selection() -> None:
+    router = LlmRouter(
+        model=ARCH_ROUTER_MODEL,
+        complete=lambda _: '{"policy": "reasoning", "confidence": 0.77}',
+    )
+    result = router.classify("compare two system designs")
+
+    assert result.success
+    assert result.route_type == "reasoning"
+    assert result.backend == "claude-code"
+    assert result.confidence == 0.77
+
+
+def test_arch_router_parses_python_style_policy_dict() -> None:
+    router = LlmRouter(
+        model=ARCH_ROUTER_MODEL,
+        complete=lambda _: "{'policy': 'local', 'confidence': 1}",
+    )
+
+    result = router.classify("summarize this note")
+
+    assert result.success
+    assert result.route_type == "local"
+    assert result.backend == "ollama"
+    assert result.confidence == 1.0
+
+
+def test_arch_router_parses_bare_policy_label() -> None:
+    router = LlmRouter(model=ARCH_ROUTER_MODEL, complete=lambda _: "tool")
+
+    result = router.classify("what is 234 * 78?")
+
+    assert result.success
+    assert result.route_type == "tool"
+    assert result.backend == "ollama"
+    assert result.confidence == 1.0
+
+
+def test_arch_router_rejects_unknown_policy() -> None:
+    router = LlmRouter(
+        model=ARCH_ROUTER_MODEL,
+        complete=lambda _: '{"policy": "unknown", "confidence": 0.9}',
+    )
+
+    assert not router.classify("anything").success
+
+
+def test_arch_router_prompt_construction(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"message": {"content": '{"policy": "local", "confidence": 0.8}'}}
+
+    def fake_post(url: str, json: dict[str, object], timeout: float) -> Response:
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    OllamaRouterClient(model=ARCH_ROUTER_MODEL).complete("summarise this")
+
+    payload = captured["json"]
+    assert isinstance(payload, dict)
+    messages = payload["messages"]
+    assert isinstance(messages, list)
+    system = messages[0]["content"]
+    assert "- tool:" in system
+    assert "- local:" in system
+    assert "- coding:" in system
+    assert "- reasoning:" in system
+    assert "format" not in payload
+
+
+def test_generic_router_requests_json_schema(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"message": {"content": '{"route_type": "local", "confidence": 0.8}'}}
+
+    def fake_post(url: str, json: dict[str, object], timeout: float) -> Response:
+        captured["json"] = json
+        return Response()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    OllamaRouterClient(model="llama3.2:3b").complete("summarise this")
+
+    payload = captured["json"]
+    assert isinstance(payload, dict)
+    assert payload["format"]["properties"]["route_type"]["enum"] == [
+        "tool",
+        "coding",
+        "reasoning",
+        "local",
+        "unknown",
+    ]
 
 
 def test_llm_router_handles_unreachable_model() -> None:
@@ -219,6 +334,25 @@ def test_rules_mode_never_calls_llm(tmp_path: Path) -> None:
     service.route(request("Lorem ipsum dolor"))
 
     assert calls == []
+
+
+def test_configured_router_llm_model_is_used(tmp_path: Path) -> None:
+    settings = Settings(
+        environment="test",
+        database_url=f"sqlite:///{tmp_path / 'arch-router.db'}",
+        models_config_path=str(ROOT / "config" / "models.yaml"),
+        policies_config_path=str(ROOT / "config" / "policies.yaml"),
+        personal_config_path=str(ROOT / "config" / "personal.yaml"),
+    )
+    engine = create_db_engine(settings.database_url)
+    init_db(engine)
+    container = build_container(settings, engine)
+    container.personal_config.preferences.router_llm_model = ARCH_ROUTER_MODEL
+
+    service = build_configured_core_service(container, router_mode="llm")
+
+    assert service.llm_router is not None
+    assert service.llm_router.model == ARCH_ROUTER_MODEL
 
 
 # ---------------------------------------------------------------------------

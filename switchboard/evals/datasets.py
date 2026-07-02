@@ -748,10 +748,10 @@ def real_smoke_cases() -> list[EvalCase]:
             category="real-tools",
             name="TimeTool grounded model response",
             prompt="Time in India",
-            expected_backend="claude-code",
+            expected_backend="ollama",
             expected_tool="time",
             expected_capability="current_time",
-            required_backends=("claude-code",),
+            required_backends=("ollama",),
             tags=("fast",),
         ),
         EvalCase(

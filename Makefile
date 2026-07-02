@@ -7,7 +7,7 @@ VENV_PYTHON_ABS := $(abspath $(VENV_PYTHON))
 VENV_RUFF := $(VENV)/bin/ruff
 VENV_MYPY := $(VENV)/bin/mypy
 
-.PHONY: install dev test lint format typecheck demo-personal check
+.PHONY: install dev test lint format typecheck demo-personal sync-config check
 
 install:
 	$(PYTHON) -m venv --clear $(VENV)
@@ -35,5 +35,10 @@ typecheck:
 
 demo-personal:
 	bash scripts/demo_personal.sh
+
+sync-config:
+	rm -rf config
+	mkdir -p config
+	cp switchboard/config/*.yaml switchboard/config/*.json config/
 
 check: lint typecheck test

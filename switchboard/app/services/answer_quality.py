@@ -278,7 +278,7 @@ class AnswerQualityHeuristic:
             "Next steps:\n"
             "- Retry locally with stricter grounding.\n"
             "- Force a stronger local model:\n"
-            "  switchboard ask '<same prompt>' --force-model ollama/qwen3:8b\n"
+            "  switchboard ask '<same prompt>' --force-model ollama/gemma4:12b\n"
             "- If this is important enough for premium:\n"
             "  switchboard ask '<same prompt>' --backend claude-code"
         )

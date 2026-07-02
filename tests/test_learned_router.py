@@ -131,9 +131,26 @@ def test_weights_roundtrip(tmp_path: Path) -> None:
 
     path.write_text(json.dumps(handcrafted_weights().to_dict()), encoding="utf-8")
     loaded = RouterWeights.from_file(path)
+    assert loaded is not None
     assert loaded.classes == ROUTE_TYPES
     assert loaded.dim == len(_FEATURES)
     assert LearnedRouter.from_file(tmp_path / "missing.json", embed=toy_embed) is None
+
+
+def test_router_from_file_rejects_embedding_model_mismatch(tmp_path: Path) -> None:
+    path = tmp_path / "w.json"
+    import json
+
+    path.write_text(json.dumps(handcrafted_weights().to_dict()), encoding="utf-8")
+
+    assert (
+        LearnedRouter.from_file(
+            path,
+            embed=toy_embed,
+            expected_embedding_model="embeddinggemma",
+        )
+        is None
+    )
 
 
 # ---------------------------------------------------------------------------

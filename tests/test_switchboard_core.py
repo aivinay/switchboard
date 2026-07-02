@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -22,11 +23,14 @@ from switchboard.app.models.backends import (
 )
 from switchboard.app.models.catalogue import ModelCatalogue
 from switchboard.app.models.internal import NormalizedRequest
+from switchboard.app.models.personal import PersonalQuotaConfig
 from switchboard.app.models.telemetry import BackendMetricRecord
 from switchboard.app.providers.base import ProviderResponse
 from switchboard.app.providers.ollama import OllamaProviderAdapter
+from switchboard.app.services.answer_confidence import AnswerConfidenceResult
 from switchboard.app.services.container import build_container
 from switchboard.app.services.cost import CostEstimator
+from switchboard.app.services.quota import QuotaLedgerService
 from switchboard.app.services.semantic_memory import EmbeddingUnavailableError
 from switchboard.app.services.switchboard_core import SwitchboardCoreService
 from switchboard.app.storage.db import create_db_engine, init_db
@@ -38,6 +42,7 @@ from switchboard.cli import (
     doctor_command,
     make_parser,
     metrics_command,
+    quota_command,
     route_command,
     train_dispatcher_command,
     train_router_command,
@@ -131,6 +136,7 @@ def switchboard_request(prompt: str = "Explain this") -> SwitchboardRequest:
 def make_core_service(
     tmp_path: Path,
     registry: BackendRegistry,
+    **kwargs,
 ) -> SwitchboardCoreService:
     settings = Settings(
         environment="test",
@@ -147,6 +153,7 @@ def make_core_service(
         registry=registry,
         metrics=container.backend_metrics_repository,
         container=container,
+        **kwargs,
     )
 
 
@@ -438,6 +445,192 @@ def test_backend_metrics_redacts_prompt_like_provider_errors(tmp_path: Path) -> 
     assert "redacted" in (record.error_message or "")
     recent_error = summary["recent_errors"][0]  # type: ignore[index]
     assert "private prompt body" not in recent_error["error_message"]  # type: ignore[index]
+
+
+def quota_metric(
+    request_id: str,
+    backend: str,
+    *,
+    success: bool = True,
+    created_at: datetime | None = None,
+) -> BackendMetricRecord:
+    return BackendMetricRecord(
+        request_id=request_id,
+        backend=backend,
+        selected_model=f"{backend}/test",
+        project="personal",
+        prompt_char_count=12,
+        latency_ms=10,
+        success=success,
+        routing_reason="test quota metric",
+        cost_type="subscription",
+        estimated_cost_usd=0.0,
+        private_mode=True,
+        created_at=created_at or datetime.now(UTC),
+    )
+
+
+def test_quota_window_math_counts_successes_inside_trailing_windows(tmp_path: Path) -> None:
+    engine = create_db_engine(f"sqlite:///{tmp_path / 'quota.db'}")
+    init_db(engine)
+    repo = BackendMetricsRepository(engine)
+    now = datetime(2026, 7, 2, 12, 0, tzinfo=UTC)
+    repo.add(quota_metric("codex_recent", "codex", created_at=now - timedelta(hours=4)))
+    repo.add(quota_metric("codex_failed", "codex", success=False, created_at=now))
+    repo.add(quota_metric("codex_old", "codex", created_at=now - timedelta(hours=6)))
+    repo.add(
+        quota_metric("claude_recent", "claude-code", created_at=now - timedelta(days=6))
+    )
+    repo.add(quota_metric("claude_old", "claude-code", created_at=now - timedelta(days=8)))
+
+    status = QuotaLedgerService(
+        repo,
+        PersonalQuotaConfig(codex_calls_per_5h=1, claude_calls_per_week=2),
+    ).snapshot(now=now)
+
+    codex = status["windows"]["codex"]  # type: ignore[index]
+    claude = status["windows"]["claude-code"]  # type: ignore[index]
+    assert codex["used"] == 1
+    assert codex["constrained"] is True
+    assert claude["used"] == 1
+    assert claude["remaining"] == 1
+    assert claude["constrained"] is False
+
+
+def test_quota_reroutes_constrained_codex_to_available_claude(tmp_path: Path) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama"),
+                "codex": FakeAdapter("codex", cost_type=BackendCostType.SUBSCRIPTION),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+    service.container.personal_config.quota.codex_calls_per_5h = 1
+    service.metrics.add(quota_metric("codex_quota_used", "codex"))
+
+    response = service.ask("Debug this failing Python test.")
+
+    assert response.success
+    assert response.backend == "claude-code"
+    record = service.metrics.get(response.request_id)
+    assert record is not None
+    assert record.metadata["quota_reason_code"] == "QUOTA_ALTERNATE_PREMIUM_SELECTED"
+    assert record.metadata["quota_original_backend"] == "codex"
+    assert "user-declared soft quota" in (response.routing_reason or "")
+
+
+def test_quota_both_premium_constrained_prefers_local(tmp_path: Path) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama"),
+                "codex": FakeAdapter("codex", cost_type=BackendCostType.SUBSCRIPTION),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+    service.container.personal_config.quota.codex_calls_per_5h = 1
+    service.container.personal_config.quota.claude_calls_per_week = 1
+    service.metrics.add(quota_metric("codex_quota_used", "codex"))
+    service.metrics.add(quota_metric("claude_quota_used", "claude-code"))
+
+    response = service.ask("Debug this failing Python test.")
+
+    assert response.success
+    assert response.backend == "ollama"
+    record = service.metrics.get(response.request_id)
+    assert record is not None
+    assert record.metadata["quota_force_local"] is True
+    assert record.metadata["quota_reason_code"] == "QUOTA_BOTH_PREMIUM_CONSTRAINED_LOCAL"
+
+
+def test_quota_disabled_by_default_is_noop(tmp_path: Path) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama"),
+                "codex": FakeAdapter("codex", cost_type=BackendCostType.SUBSCRIPTION),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+    service.metrics.add(quota_metric("codex_previous", "codex"))
+
+    response = service.ask("Debug this failing Python test.")
+
+    assert response.success
+    assert response.backend == "codex"
+    record = service.metrics.get(response.request_id)
+    assert record is not None
+    assert "quota_routing_influenced" not in record.metadata
+
+
+def test_quota_never_upgrades_local_decisions(tmp_path: Path) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama"),
+                "codex": FakeAdapter("codex", cost_type=BackendCostType.SUBSCRIPTION),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+    service.container.personal_config.quota.codex_calls_per_5h = 10
+    service.container.personal_config.quota.claude_calls_per_week = 10
+
+    response = service.ask("Summarize this local note.")
+
+    assert response.success
+    assert response.backend == "ollama"
+    record = service.metrics.get(response.request_id)
+    assert record is not None
+    assert "quota_routing_influenced" not in record.metadata
+
+
+def test_quota_never_overrides_private_mode_floor(tmp_path: Path) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama", available=False),
+                "codex": FakeAdapter("codex", cost_type=BackendCostType.SUBSCRIPTION),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+    service.container.personal_config.quota.codex_calls_per_5h = 0
+    service.container.personal_config.quota.claude_calls_per_week = 0
+
+    response = service.ask("my ssn is 123-45-6789, summarize this medical record")
+
+    assert response.success is False
+    assert response.backend == "ollama"
+    assert "will not send it to a subscription backend" in (response.error_message or "")
+    record = service.metrics.get(response.request_id)
+    assert record is not None
+    assert record.metadata["private_mode_would_block"] is True
+    assert "quota_routing_influenced" not in record.metadata
 
 
 def test_backend_router_forced_selection(tmp_path: Path) -> None:
@@ -1068,12 +1261,12 @@ def test_cli_route_uses_core_route_preview(monkeypatch, capsys) -> None:
             "Next step: switchboard ask --backend claude-code '<same prompt>'",
         ),
         (
-            "ollama/qwen3:8b",
+            "ollama/gemma4:12b",
             "ollama",
-            "ollama/qwen3:8b",
+            "ollama/gemma4:12b",
             (
                 "Next step: switchboard ask --backend ollama "
-                "--force-model ollama/qwen3:8b '<same prompt>'"
+                "--force-model ollama/gemma4:12b '<same prompt>'"
             ),
         ),
         (
@@ -1260,6 +1453,241 @@ def test_core_route_preview_keeps_sensitive_content_local(tmp_path: Path) -> Non
 
     assert decision.backend == "ollama"
     assert "Private mode detected sensitive content" in decision.routing_reason
+
+
+class RecordingAdapter(FakeAdapter):
+    def __init__(
+        self,
+        name: str,
+        *,
+        content: str,
+        available: bool = True,
+        cost_type: BackendCostType = BackendCostType.LOCAL,
+    ) -> None:
+        super().__init__(name, available=available, cost_type=cost_type)
+        self.content = content
+        self.prompts: list[str] = []
+
+    def ask(self, request: SwitchboardRequest) -> SwitchboardResponse:
+        self.prompts.append(request.prompt)
+        return SwitchboardResponse(
+            request_id=request.request_id,
+            backend=self.name,
+            content=self.content,
+            stdout=self.content,
+            latency_ms=9,
+            success=True,
+            cost_type=self.cost_type,
+            estimated_cost_usd=0.0,
+            selected_model=request.model,
+        )
+
+
+class FakeConfidence:
+    def __init__(self, result: AnswerConfidenceResult) -> None:
+        self.result = result
+        self.calls = 0
+
+    def check(self, **kwargs) -> AnswerConfidenceResult:  # noqa: ANN003
+        self.calls += 1
+        return self.result
+
+
+def test_confidence_escalation_disabled_by_default(tmp_path: Path) -> None:
+    confidence = FakeConfidence(AnswerConfidenceResult(passed=False, score=0.1))
+    ollama = RecordingAdapter("ollama", content="weak local answer")
+    claude = RecordingAdapter(
+        "claude-code",
+        content="premium answer",
+        cost_type=BackendCostType.SUBSCRIPTION,
+    )
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry({"ollama": ollama, "claude-code": claude}),
+        answer_confidence=confidence,  # type: ignore[arg-type]
+    )
+
+    response = service.ask("Summarise this note: one fact.")
+
+    assert response.backend == "ollama"
+    assert response.content == "weak local answer"
+    assert confidence.calls == 0
+    assert claude.prompts == []
+
+
+def test_low_confidence_local_answer_escalates_to_premium(tmp_path: Path) -> None:
+    confidence = FakeConfidence(
+        AnswerConfidenceResult(passed=False, score=0.2, latency_ms=4, verdict="NO")
+    )
+    ollama = RecordingAdapter("ollama", content="weak local answer")
+    claude = RecordingAdapter(
+        "claude-code",
+        content="premium answer",
+        cost_type=BackendCostType.SUBSCRIPTION,
+    )
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry({"ollama": ollama, "claude-code": claude}),
+        answer_confidence=confidence,  # type: ignore[arg-type]
+    )
+    service.container.personal_config.preferences.escalation_enabled = True
+
+    response = service.ask("Summarise this note: one fact.")
+    record = service.metrics_list(limit=1)[0]
+
+    assert response.backend == "claude-code"
+    assert response.content == "premium answer"
+    assert confidence.calls == 1
+    assert len(claude.prompts) == 1
+    assert record.metadata["answer_confidence_escalated"] is True
+    assert record.metadata["answer_confidence_escalated_from"] == "ollama"
+    assert record.metadata["answer_confidence_escalated_to"] == "claude-code"
+
+
+def test_coding_flavored_local_answer_escalates_to_codex(tmp_path: Path) -> None:
+    confidence = FakeConfidence(
+        AnswerConfidenceResult(passed=False, score=0.2, latency_ms=4, verdict="NO")
+    )
+    ollama = RecordingAdapter("ollama", content="weak local answer")
+    codex = RecordingAdapter(
+        "codex",
+        content="codex answer",
+        cost_type=BackendCostType.SUBSCRIPTION,
+    )
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry({"ollama": ollama, "codex": codex}),
+        answer_confidence=confidence,  # type: ignore[arg-type]
+    )
+    service.container.personal_config.preferences.escalation_enabled = True
+
+    response = service.ask("Locally debug this Python error: TypeError")
+    record = service.metrics_list(limit=1)[0]
+
+    assert response.backend == "codex"
+    assert response.content == "codex answer"
+    assert record.metadata["answer_confidence_escalated_to"] == "codex"
+
+
+def test_sensitive_low_confidence_answer_never_escalates(tmp_path: Path) -> None:
+    confidence = FakeConfidence(
+        AnswerConfidenceResult(passed=False, score=0.2, latency_ms=4, verdict="NO")
+    )
+    ollama = RecordingAdapter("ollama", content="weak local answer")
+    claude = RecordingAdapter(
+        "claude-code",
+        content="premium answer",
+        cost_type=BackendCostType.SUBSCRIPTION,
+    )
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry({"ollama": ollama, "claude-code": claude}),
+        answer_confidence=confidence,  # type: ignore[arg-type]
+    )
+    service.container.personal_config.preferences.escalation_enabled = True
+
+    response = service.ask("Summarise my private medical record.")
+    record = service.metrics_list(limit=1)[0]
+
+    assert response.backend == "ollama"
+    assert "private mode keeps this request on the local model" in (response.content or "")
+    assert claude.prompts == []
+    assert record.metadata["answer_confidence_escalated"] is False
+    assert record.metadata["answer_confidence_sensitive_blocked"] is True
+
+
+def test_confidence_check_failure_does_not_escalate(tmp_path: Path) -> None:
+    confidence = FakeConfidence(
+        AnswerConfidenceResult(passed=True, score=1.0, error="check unavailable")
+    )
+    ollama = RecordingAdapter("ollama", content="local answer")
+    claude = RecordingAdapter(
+        "claude-code",
+        content="premium answer",
+        cost_type=BackendCostType.SUBSCRIPTION,
+    )
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry({"ollama": ollama, "claude-code": claude}),
+        answer_confidence=confidence,  # type: ignore[arg-type]
+    )
+    service.container.personal_config.preferences.escalation_enabled = True
+
+    response = service.ask("Summarise this note: one fact.")
+    record = service.metrics_list(limit=1)[0]
+
+    assert response.backend == "ollama"
+    assert claude.prompts == []
+    assert record.metadata["answer_confidence_unavailable"] is True
+    assert record.metadata["answer_confidence_escalated"] is False
+
+
+def test_core_route_preview_blocks_sensitive_content_when_ollama_unavailable(
+    tmp_path: Path,
+) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama", available=False),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+
+    decision = service.preview_route(
+        "my ssn is 123-45-6789, summarize this medical record"
+    )
+
+    assert decision.backend == "ollama"
+    assert decision.display_model == "Ollama"
+    assert not decision.fallback_used
+    assert decision.fallback_from is None
+    assert "would refuse" in decision.routing_reason
+
+
+def test_cli_route_explains_private_mode_block_when_ollama_unavailable(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama", available=False),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "switchboard.cli.build_core_service",
+        lambda **kwargs: service,
+    )
+
+    route_command(
+        argparse.Namespace(
+            prompt="my ssn is 123-45-6789, summarize this medical record",
+            project=None,
+            show_prompt=False,
+            debug=False,
+            show_reasons=False,
+            force_model=None,
+        )
+    )
+
+    output = capsys.readouterr().out
+    assert "Recommendation: Ollama" in output
+    assert "Backend: ollama" in output
+    assert "would refuse" in output
+    assert "Fallback from:" not in output
+    assert "Recommendation: Claude" not in output
 
 
 def test_backends_command_prints_availability(monkeypatch, capsys) -> None:
@@ -1548,6 +1976,42 @@ def test_metrics_command_summary(monkeypatch, capsys) -> None:
     assert '"total_requests": 1' in output
 
 
+def test_quota_command_summary(monkeypatch, capsys) -> None:
+    class FakeCoreService:
+        def quota_status(self):  # noqa: ANN201
+            return {
+                "enabled": True,
+                "windows": {
+                    "codex": {
+                        "label": "Codex",
+                        "used": 1,
+                        "budget": 2,
+                        "remaining": 1,
+                        "window": "5h",
+                        "constrained": False,
+                    },
+                    "claude-code": {
+                        "label": "Claude",
+                        "used": 7,
+                        "budget": 7,
+                        "remaining": 0,
+                        "window": "7d",
+                        "constrained": True,
+                    },
+                },
+            }
+
+    monkeypatch.setattr("switchboard.cli.build_core_service", lambda: FakeCoreService())
+
+    quota_command(argparse.Namespace(format="text"))
+
+    output = capsys.readouterr().out
+    assert "Premium quota ledger" in output
+    assert "Codex" in output
+    assert "Claude" in output
+    assert "constrained" in output
+
+
 def test_train_router_command_exits_cleanly_when_embedding_model_down(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -1657,6 +2121,95 @@ def test_train_sensitivity_command_exits_cleanly_when_embedding_model_down(
     message = str(excinfo.value)
     assert "Embedding model unreachable" in message
     assert "ollama pull nomic-embed-text" in message
+
+
+def training_report():
+    from switchboard.training.train_router import TrainingReport
+
+    return TrainingReport(
+        total_examples=1,
+        train_size=1,
+        holdout_size=0,
+        holdout_accuracy=1.0,
+        golden_accuracy=1.0,
+        per_class_accuracy={"local": 1.0},
+        confusions=[],
+    )
+
+
+class FakeWeights:
+    def __init__(self) -> None:
+        self.metadata: dict[str, object] = {}
+
+    def to_dict(self) -> dict[str, object]:
+        return {"metadata": self.metadata}
+
+
+def test_train_router_command_prints_sync_config_reminder(
+    monkeypatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dataset = tmp_path / "router_dataset.jsonl"
+    dataset.write_text('{"prompt": "hi", "label": "local"}\n', encoding="utf-8")
+
+    monkeypatch.setattr(
+        "switchboard.training.train_router.train_from_files",
+        lambda **kwargs: training_report(),
+    )
+
+    train_router_command(
+        argparse.Namespace(
+            dataset=str(dataset),
+            output=str(tmp_path / "router_weights.json"),
+            embedding_model="nomic-embed-text",
+            external=False,
+            augment=False,
+            augment_limit=None,
+        )
+    )
+
+    assert "Reminder: run `make sync-config`" in capsys.readouterr().out
+
+
+def test_train_dispatcher_command_prints_sync_config_reminder(
+    monkeypatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        "switchboard.training.tool_dispatcher_dataset."
+        "load_or_build_dispatcher_dataset",
+        lambda path: [],
+    )
+    monkeypatch.setattr(
+        "switchboard.training.train_router.train",
+        lambda *args, **kwargs: (FakeWeights(), training_report()),
+    )
+
+    train_dispatcher_command(
+        argparse.Namespace(
+            dataset=str(tmp_path / "dispatcher.jsonl"),
+            output=str(tmp_path / "tool_dispatcher_weights.json"),
+            embedding_model="nomic-embed-text",
+        )
+    )
+
+    assert "Reminder: run `make sync-config`" in capsys.readouterr().out
+
+
+def test_train_sensitivity_command_prints_sync_config_reminder(
+    monkeypatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        "switchboard.training.train_router.train",
+        lambda *args, **kwargs: (FakeWeights(), training_report()),
+    )
+
+    train_sensitivity_command(
+        argparse.Namespace(
+            output=str(tmp_path / "sensitivity_weights.json"),
+            embedding_model="nomic-embed-text",
+        )
+    )
+
+    assert "Reminder: run `make sync-config`" in capsys.readouterr().out
 
 
 def test_backend_error_hint_for_unsupported_codex_model() -> None:

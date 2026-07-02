@@ -33,6 +33,7 @@ class PersonalPreferences(BaseModel):
     # rules fallback).
     router_mode: str = "rules"
     llm_router_model: str = "llama3.2:3b"
+    router_llm_model: str | None = None
     # Trained-router weights file (relative to repo root) and confidence floor.
     router_weights_path: str = "config/router_weights.json"
     learned_router_min_confidence: float = 0.55
@@ -55,10 +56,17 @@ class PersonalPreferences(BaseModel):
     # Headroom-style heuristic prompt compression before routing.
     compression_enabled: bool = False
     compression_threshold_tokens: int = 1000
+    compression_engine: str = "heuristic"
+    # Optional post-answer local confidence check and premium escalation.
+    escalation_enabled: bool = False
+    escalation_confidence_threshold: float = 0.55
     # Embedding-based long-term semantic memory (local embeddings only).
     semantic_memory_enabled: bool = False
     semantic_memory_top_k: int = 3
     embedding_model: str = "nomic-embed-text"
+    # Optional local model role mappings. Values are catalogue model IDs and
+    # are only honored when the model is enabled, local, and chat-selectable.
+    local_model_roles: dict[str, str] = Field(default_factory=dict)
     # Allow the Claude Code adapter to use its WebSearch tool (pre-approved via
     # --allowedTools). Off by default; uses your Claude subscription's search.
     claude_code_web_search: bool = False
@@ -89,6 +97,11 @@ class PersonalSavingsConfig(BaseModel):
     assume_premium_for_unknown: bool = False
 
 
+class PersonalQuotaConfig(BaseModel):
+    codex_calls_per_5h: int | None = Field(default=None, ge=0)
+    claude_calls_per_week: int | None = Field(default=None, ge=0)
+
+
 class LocalRuntimeConfig(BaseModel):
     performance_mode: str = "balanced"
     max_loaded_models: int = 2
@@ -115,6 +128,7 @@ class PersonalConfig(BaseModel):
     savings: PersonalSavingsConfig = Field(default_factory=PersonalSavingsConfig)
     local_runtime: LocalRuntimeConfig = Field(default_factory=LocalRuntimeConfig)
     providers: dict[str, PersonalProviderConfig] = Field(default_factory=dict)
+    quota: PersonalQuotaConfig = Field(default_factory=PersonalQuotaConfig)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> PersonalConfig:

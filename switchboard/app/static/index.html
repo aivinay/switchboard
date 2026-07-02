@@ -9,77 +9,51 @@
   <body>
     <main class="shell">
       <header class="topbar">
-        <div class="model-picker">
-          <button
-            id="model-picker-button"
-            class="model-picker-button"
-            type="button"
-            aria-haspopup="listbox"
-            aria-expanded="false"
-          >
-            <span id="selected-model">Auto</span>
-            <span class="chevron" aria-hidden="true">⌄</span>
-          </button>
-          <div id="model-menu" class="model-menu" role="listbox" aria-label="Model" hidden>
+        <div class="topbar-left">
+          <div class="model-picker">
             <button
-              class="model-option selected"
+              id="model-picker-button"
+              class="model-picker-button"
               type="button"
-              role="option"
-              aria-selected="true"
-              data-model="auto"
+              aria-haspopup="listbox"
+              aria-expanded="false"
             >
-              <span>
-                <strong>Auto</strong>
-                <small>Routes automatically</small>
-              </span>
-              <span class="checkmark" aria-hidden="true">✓</span>
+              <span id="selected-model">Auto</span>
+              <span class="chevron" aria-hidden="true">⌄</span>
             </button>
-            <button
-              class="model-option"
-              type="button"
-              role="option"
-              aria-selected="false"
-              data-model="codex"
-            >
-              <span>
-                <strong>Codex</strong>
-                <small>Best for coding tasks</small>
-              </span>
-              <span class="checkmark" aria-hidden="true">✓</span>
-            </button>
-            <button
-              class="model-option"
-              type="button"
-              role="option"
-              aria-selected="false"
-              data-model="claude"
-            >
-              <span>
-                <strong>Claude</strong>
-                <small>Good for reasoning and design</small>
-              </span>
-              <span class="checkmark" aria-hidden="true">✓</span>
-            </button>
-            <button
-              class="model-option"
-              type="button"
-              role="option"
-              aria-selected="false"
-              data-model="ollama"
-            >
-              <span>
-                <strong>Ollama</strong>
-                <small>Runs locally</small>
-              </span>
-              <span class="checkmark" aria-hidden="true">✓</span>
-            </button>
+            <div id="model-menu" class="model-menu" role="listbox" aria-label="Model" hidden></div>
           </div>
+          <div id="quota-meters" class="quota-meters" hidden></div>
         </div>
         <h1>Switchboard</h1>
-        <button id="new-chat" class="new-chat-button" type="button" title="Start a new chat">
-          + New chat
-        </button>
+        <div class="topbar-actions">
+          <button id="dashboard-toggle" class="topbar-button" type="button" aria-expanded="false">
+            Savings
+          </button>
+          <button id="new-chat" class="topbar-button" type="button" title="Start a new chat">
+            + New chat
+          </button>
+        </div>
       </header>
+
+      <section id="dashboard" class="dashboard" hidden>
+        <div class="dashboard-grid">
+          <div>
+            <span class="metric-label">Premium avoided</span>
+            <strong id="metric-premium-avoided">0</strong>
+          </div>
+          <div>
+            <span class="metric-label">Tokens saved</span>
+            <strong id="metric-tokens-saved">0</strong>
+          </div>
+          <div>
+            <span class="metric-label">Premium calls</span>
+            <strong id="metric-premium-calls">0</strong>
+          </div>
+        </div>
+        <div id="backend-usage" class="backend-usage"></div>
+        <div id="trend" class="trend" aria-label="Last 7 days"></div>
+      </section>
 
       <section id="messages" class="messages" aria-live="polite"></section>
 
@@ -92,7 +66,7 @@
           aria-label="Message"
         ></textarea>
         <div class="composer-footer">
-          <span aria-hidden="true"></span>
+          <span id="private-mode" class="private-mode" hidden>Lock Private</span>
           <button id="send" class="send-button" type="submit" aria-label="Send message" disabled>
             <span aria-hidden="true">↑</span>
           </button>

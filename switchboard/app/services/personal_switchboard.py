@@ -659,9 +659,10 @@ class PersonalSwitchboardService:
             reason_codes.extend(
                 ["PERSONAL_PRIVATE_MODE_CLOUD_BLOCKED", "PRIVATE_MODE_ENABLED", "CLOUD_DISABLED"]
             )
-            local_complex = self._prefer_model_ids(
+            local_complex = self._role_model(
                 local_models,
-                ["ollama/deepseek-r1:8b", "ollama/gemma3:12b"],
+                "reasoning",
+                ["ollama/gpt-oss:20b", "ollama/glm-4.7-flash", "ollama/gemma4:12b"],
             )
             if classification.task_type in {
                 TaskType.SUMMARISATION,
@@ -888,13 +889,20 @@ class PersonalSwitchboardService:
         if selected.provider != "ollama":
             return
         add("LOCAL_OLLAMA_MODEL_SELECTED")
-        if selected.model_id == "ollama/llama3.2:3b":
+        if selected.model_id in {"ollama/llama3.2:3b", "ollama/gemma4:e4b"}:
             add("OLLAMA_FAST_MODEL_SELECTED")
-        elif selected.model_id == "ollama/qwen3:8b":
+        elif selected.model_id == "ollama/gemma4:12b":
             add("OLLAMA_GENERAL_MODEL_SELECTED")
-        elif selected.model_id == "ollama/qwen2.5-coder:7b":
+        elif selected.model_id in {
+            "ollama/qwen3.5:9b",
+            "ollama/qwen3.6:27b",
+            "ollama/qwen3-coder:30b",
+        }:
             add("OLLAMA_CODING_MODEL_SELECTED")
-        elif selected.model_id == "ollama/deepseek-r1:8b":
+        elif selected.model_id in {
+            "ollama/gpt-oss:20b",
+            "ollama/glm-4.7-flash",
+        }:
             add("OLLAMA_REASONING_MODEL_SELECTED")
         if selected.model_id not in set(loaded_models):
             add("COLD_START_POSSIBLE")
@@ -1017,43 +1025,82 @@ class PersonalSwitchboardService:
                 return by_id[model_id]
         return None
 
+    def _role_model(
+        self,
+        models: list[ModelProfile],
+        role: str,
+        fallbacks: list[str],
+    ) -> ModelProfile | None:
+        configured = self.container.personal_config.preferences.local_model_roles.get(role)
+        model_ids = ([configured] if configured else []) + fallbacks
+        return self._prefer_model_ids(models, model_ids)
+
     def _simple_task_model(self, models: list[ModelProfile]) -> ModelProfile:
         return (
-            self._prefer_model_ids(models, ["ollama/llama3.2:3b", "ollama/qwen3:8b"])
+            self._role_model(
+                models,
+                "simple",
+                ["ollama/gemma4:e4b", "ollama/llama3.2:3b", "ollama/gemma4:12b"],
+            )
             or self._best_local(models, QualityTier.SMALL)
         )
 
     def _private_summary_model(self, models: list[ModelProfile]) -> ModelProfile:
         return (
-            self._prefer_model_ids(
+            self._role_model(
                 models,
-                ["ollama/qwen3:8b", "ollama/llama3.2:3b", "ollama/gemma3:12b"],
+                "private_summary",
+                ["ollama/gemma4:12b", "ollama/gemma4:e4b", "ollama/llama3.2:3b"],
             )
             or self._best_local(models, QualityTier.MEDIUM)
         )
 
     def _general_reasoning_model(self, models: list[ModelProfile]) -> ModelProfile:
         return (
-            self._prefer_model_ids(models, ["ollama/qwen3:8b", "ollama/gemma3:12b"])
+            self._role_model(
+                models,
+                "general",
+                ["ollama/gemma4:12b", "ollama/gemma4:e4b", "ollama/llama3.2:3b"],
+            )
             or self._best_local(models, QualityTier.MEDIUM)
         )
 
     def _coding_model(self, models: list[ModelProfile]) -> ModelProfile | None:
         return (
-            self._prefer_model_ids(models, ["ollama/qwen2.5-coder:7b", "ollama/qwen3:8b"])
+            self._role_model(
+                models,
+                "coding",
+                [
+                    "ollama/qwen3.5:9b",
+                    "ollama/qwen3.6:27b",
+                    "ollama/qwen3-coder:30b",
+                    "ollama/gemma4:12b",
+                ],
+            )
             or self._best_for(models, "coding")
         )
 
     def _complex_reasoning_model(self, models: list[ModelProfile]) -> ModelProfile | None:
-        return self._prefer_model_ids(
+        return self._role_model(
             models,
-            ["ollama/deepseek-r1:8b", "ollama/gemma3:12b", "ollama/qwen3:8b"],
+            "reasoning",
+            [
+                "ollama/gpt-oss:20b",
+                "ollama/glm-4.7-flash",
+                "ollama/gemma4:12b",
+            ],
         )
 
     def _complex_coding_model(self, models: list[ModelProfile]) -> ModelProfile | None:
-        return self._prefer_model_ids(
+        return self._role_model(
             models,
-            ["ollama/qwen2.5-coder:7b", "ollama/deepseek-r1:8b", "ollama/gemma3:12b"],
+            "complex_coding",
+            [
+                "ollama/qwen3-coder:30b",
+                "ollama/qwen3.6:27b",
+                "ollama/qwen3.5:9b",
+                "ollama/gpt-oss:20b",
+            ],
         ) or self._best_for(models, "coding")
 
     def _best_tier(self, models: list[ModelProfile], tier: QualityTier) -> ModelProfile:

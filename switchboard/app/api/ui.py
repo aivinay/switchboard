@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections import Counter
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -13,7 +15,9 @@ from switchboard.app.models.backends import SwitchboardResponse, backend_display
 from switchboard.app.models.personal import FeedbackCreate, FeedbackRead
 from switchboard.app.services.container import ServiceContainer
 from switchboard.app.services.core_factory import build_configured_core_service
+from switchboard.app.services.local_runtime import OllamaRuntimeService
 from switchboard.app.services.personal_switchboard import PersonalSwitchboardService
+from switchboard.app.services.quota import PREMIUM_BACKENDS, QuotaLedgerService
 from switchboard.app.services.switchboard_core import SwitchboardCoreService
 
 router = APIRouter(tags=["ui"])
@@ -55,6 +59,7 @@ class UiHistoryMessage(BaseModel):
     display_model: str | None = None
     backend: str | None = None
     request_id: str | None = None
+    routing: dict[str, object] | None = None
     created_at: str
 
 
@@ -99,6 +104,53 @@ def response_display_model_name(response: SwitchboardResponse) -> str:
     if response.backend in {"switchboard", "time"} and response.selected_model:
         return response.selected_model
     return display_model_name(response.backend)
+
+
+def metric_metadata(request: Request, request_id: str | None) -> dict[str, object]:
+    if not request_id:
+        return {}
+    container: ServiceContainer = request.app.state.container
+    metric = container.backend_metrics_repository.get(request_id)
+    return dict(metric.metadata) if metric is not None else {}
+
+
+def int_metadata(metadata: dict[str, object], key: str) -> int:
+    value = metadata.get(key)
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int | float):
+        return max(0, int(value))
+    return 0
+
+
+def compression_percent(metadata: dict[str, object]) -> int | None:
+    ratio = metadata.get("context_compression_ratio", metadata.get("compression_ratio"))
+    if not isinstance(ratio, int | float) or ratio >= 1:
+        return None
+    return max(0, min(99, round((1 - float(ratio)) * 100)))
+
+
+def routing_chip_metadata(metadata: dict[str, object]) -> dict[str, object]:
+    percent = compression_percent(metadata)
+    payload: dict[str, object] = {
+        "route_type": str(metadata.get("route_type") or ""),
+        "privacy_floor": bool(
+            metadata.get("private_mode_rerouted")
+            or metadata.get("private_mode_would_block")
+            or metadata.get("sensitivity_escalated")
+        ),
+        "tool_grounded": bool(metadata.get("grounded_by_tool")),
+        "compressed": bool(
+            metadata.get("context_compression_used") or metadata.get("compression_used")
+        ),
+        "escalated": bool(metadata.get("answer_confidence_escalated")),
+        "quota": bool(metadata.get("quota_routing_influenced")),
+    }
+    if percent is not None:
+        payload["compression_percent"] = percent
+    if metadata.get("quota_reason_code"):
+        payload["quota_reason_code"] = str(metadata["quota_reason_code"])
+    return payload
 
 
 def clean_backend_error(response: SwitchboardResponse) -> str:
@@ -203,7 +255,10 @@ def answer_chunks(answer: str, chunk_size: int = 24) -> Iterator[str]:
         yield answer[start : start + chunk_size]
 
 
-def stream_chat_response(response: SwitchboardResponse) -> Iterator[str]:
+def stream_chat_response(
+    response: SwitchboardResponse,
+    metadata: dict[str, object] | None = None,
+) -> Iterator[str]:
     yield stream_event("start", session_id=response.session_id)
     if not response.success:
         yield stream_event(
@@ -216,12 +271,14 @@ def stream_chat_response(response: SwitchboardResponse) -> Iterator[str]:
         return
 
     payload = response_payload(response)
+    metadata = metadata or {}
     routing_info = {
         "request_id": response.request_id,
         "routing_reason": response.routing_reason,
         "latency_ms": response.latency_ms,
         "cost_type": response.cost_type.value,
         "selected_model": response.selected_model,
+        **routing_chip_metadata(metadata),
     }
     yield stream_event(
         "metadata",
@@ -261,8 +318,9 @@ def chat(payload: UiChatRequest, request: Request) -> UiChatResponse:
 @router.post("/api/chat/stream")
 def chat_stream(payload: UiChatRequest, request: Request) -> StreamingResponse:
     response = ask_switchboard(payload, request)
+    metadata = metric_metadata(request, response.request_id)
     return StreamingResponse(
-        stream_chat_response(response),
+        stream_chat_response(response, metadata),
         media_type="application/x-ndjson",
     )
 
@@ -282,12 +340,127 @@ def chat_history(session_id: str, request: Request) -> UiHistoryResponse:
             display_model=record.display_model,
             backend=record.backend,
             request_id=str(record.metadata.get("request_id") or "") or None,
+            routing=routing_chip_metadata(
+                metric_metadata(request, str(record.metadata.get("request_id") or ""))
+            )
+            if record.role == "assistant"
+            else None,
             created_at=record.created_at.isoformat(),
         )
         for record in records
         if record.role in {"user", "assistant"}
     ]
     return UiHistoryResponse(session_id=session_id, messages=messages)
+
+
+@router.get("/api/backends/status")
+def backends_status(request: Request) -> dict[str, object]:
+    container: ServiceContainer = request.app.state.container
+    service = build_configured_core_service(container, cwd=Path.cwd())
+    infos = {backend.name: backend for backend in service.backends()}
+    http_enabled = http_cli_backends_enabled()
+    loaded = sorted(OllamaRuntimeService(container.personal_config).list_loaded_models())
+    options: list[dict[str, object]] = [
+        {
+            "value": "auto",
+            "backend": None,
+            "label": "Auto",
+            "description": "Routes automatically",
+            "available": True,
+            "hot": False,
+        }
+    ]
+    for value, backend, description in (
+        ("codex", "codex", "Best for coding tasks"),
+        ("claude", "claude-code", "Good for reasoning and design"),
+        ("ollama", "ollama", "Runs locally"),
+    ):
+        info = infos.get(backend)
+        available = bool(info and info.available)
+        disabled_reason = None
+        if backend in HTTP_DISABLED_CLI_BACKENDS and not http_enabled:
+            available = False
+            disabled_reason = "HTTP CLI backend opt-in required"
+        hot_models = loaded if backend == "ollama" else []
+        options.append(
+            {
+                "value": value,
+                "backend": backend,
+                "label": backend_display_name(backend),
+                "description": description,
+                "available": available,
+                "hot": bool(hot_models),
+                "hot_models": hot_models,
+                "details": info.details if info is not None else None,
+                "warning": disabled_reason or (info.warning if info is not None else None),
+            }
+        )
+    return {
+        "options": options,
+        "loaded_local_models": loaded,
+        "private_mode": container.personal_config.preferences.private_mode,
+    }
+
+
+@router.get("/api/dashboard")
+def dashboard(request: Request) -> dict[str, object]:
+    container: ServiceContainer = request.app.state.container
+    now = datetime.now(UTC)
+    since = now - timedelta(days=7)
+    records = container.backend_metrics_repository.list_since(since=since, limit=10000)
+    usage_by_backend = Counter(record.backend for record in records)
+    successful = [record for record in records if record.success]
+    premium_calls = sum(1 for record in successful if record.backend in PREMIUM_BACKENDS)
+    premium_avoided = sum(1 for record in successful if record.backend not in PREMIUM_BACKENDS)
+    compression_saved = 0
+    routing_saved = 0
+    for record in records:
+        compression_saved += int_metadata(record.metadata, "compression_tokens_saved")
+        compression_saved += int_metadata(record.metadata, "context_compression_tokens_saved")
+        if record.success and record.backend not in PREMIUM_BACKENDS:
+            routing_saved += max(0, round(record.prompt_char_count / 4))
+
+    trend = []
+    counts_by_day: dict[str, Counter[str]] = {}
+    for record in records:
+        key = record.created_at.date().isoformat()
+        counts_by_day.setdefault(key, Counter())
+        counts_by_day[key]["requests"] += 1
+        if record.success and record.backend in PREMIUM_BACKENDS:
+            counts_by_day[key]["premium_calls"] += 1
+    for days_ago in range(6, -1, -1):
+        day = (now - timedelta(days=days_ago)).date().isoformat()
+        counts = counts_by_day.get(day, Counter())
+        trend.append(
+            {
+                "date": day,
+                "requests": counts.get("requests", 0),
+                "premium_calls": counts.get("premium_calls", 0),
+            }
+        )
+
+    return {
+        "window_days": 7,
+        "total_requests": len(records),
+        "premium_calls": premium_calls,
+        "premium_calls_avoided_vs_always_premium": premium_avoided,
+        "estimated_tokens_saved": {
+            "compression": compression_saved,
+            "routing": routing_saved,
+            "total": compression_saved + routing_saved,
+        },
+        "usage_by_backend": dict(usage_by_backend),
+        "last_7_days": trend,
+    }
+
+
+@router.get("/api/quota")
+def quota_status(request: Request) -> dict[str, object]:
+    container: ServiceContainer = request.app.state.container
+    return QuotaLedgerService(
+        container.backend_metrics_repository,
+        container.personal_config.quota,
+    ).snapshot()
 
 
 VALID_CORRECTED_BACKENDS = ("ollama", "codex", "claude-code")

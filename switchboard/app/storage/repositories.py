@@ -476,6 +476,21 @@ class BackendMetricsRepository:
             ).first()
             return backend_metric_to_read(record) if record else None
 
+    def list_since(
+        self,
+        *,
+        since: datetime,
+        limit: int = 5000,
+    ) -> list[BackendMetricRead]:
+        with Session(self.engine) as session:
+            statement = (
+                select(BackendMetricRecord)
+                .where(BackendMetricRecord.created_at >= since)
+                .order_by(desc(BackendMetricRecord.created_at))
+                .limit(limit)
+            )
+            return [backend_metric_to_read(record) for record in session.exec(statement).all()]
+
     def list(self, limit: int = 20) -> list[BackendMetricRead]:
         with Session(self.engine) as session:
             statement = (
@@ -484,6 +499,24 @@ class BackendMetricsRepository:
                 .limit(limit)
             )
             return [backend_metric_to_read(record) for record in session.exec(statement).all()]
+
+    def successful_call_count(
+        self,
+        *,
+        backend: str,
+        since: datetime,
+        until: datetime | None = None,
+    ) -> int:
+        with Session(self.engine) as session:
+            statement = select(BackendMetricRecord).where(
+                BackendMetricRecord.backend == backend,
+                col(BackendMetricRecord.success).is_(True),
+                BackendMetricRecord.created_at >= since,
+            )
+            if until is not None:
+                statement = statement.where(BackendMetricRecord.created_at <= until)
+            records = session.exec(statement).all()
+            return len(records)
 
     def summary(self) -> dict[str, object]:
         with Session(self.engine) as session:

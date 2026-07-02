@@ -10,7 +10,7 @@ prompt
   -> deterministic policy (runs first, always):
        privacy reroute, tool grounding, live-data, forced backend, follow-up stickiness
   -> learned classifier (only when policy did not already decide):
-       embed prompt (nomic-embed-text) -> softmax over {tool, local, coding, reasoning}
+       embed prompt (preferences.embedding_model) -> softmax over {tool, local, coding, reasoning}
   -> rules fallback (if weights missing, embedder down, or confidence < threshold)
 ```
 
@@ -42,6 +42,26 @@ switchboard train-router --augment --augment-limit 200
 switchboard ask "create a project with a login page" --backend auto --router learned
 ```
 
+`preferences.embedding_model` is the default embedder for learned routing,
+semantic memory, dispatcher training, and sensitivity training. It remains
+`nomic-embed-text` for compatibility with shipped weights. To move to a newer
+embedder, retrain every learned weight file with the same model:
+
+```bash
+switchboard train-router --embedding-model embeddinggemma --output config/router_weights.json
+switchboard train-dispatcher --embedding-model embeddinggemma --output config/tool_dispatcher_weights.json
+switchboard train-sensitivity --embedding-model embeddinggemma --output config/sensitivity_weights.json
+
+switchboard train-router --embedding-model qwen3-embedding:0.6b --output config/router_weights.json
+switchboard train-dispatcher --embedding-model qwen3-embedding:0.6b --output config/tool_dispatcher_weights.json
+switchboard train-sensitivity --embedding-model qwen3-embedding:0.6b --output config/sensitivity_weights.json
+```
+
+Weights record both `embedding_model` and `dim`. If the configured embedder does
+not match the weights metadata, or an embedding vector has the wrong dimension,
+the learned component is not used and Switchboard falls back to deterministic
+rules.
+
 Training data = template expansion (labeled by the legacy rules) + hand-labeled
 golden dogfood cases + optional Claude paraphrases. Every routing bug found
 during dogfooding is a golden case the trained model must pass.
@@ -53,6 +73,30 @@ trains in seconds on CPU, ~50 ms inference (faster than an LLM router call),
 pure-Python at inference (no numpy), retrainable nightly from feedback, and its
 confidence scores gate the rules fallback. numpy is needed only at training
 time (the optional `[router]` extra).
+
+## Which Router Mode Should I Use?
+
+- `rules`: safest and fastest deterministic baseline.
+- `learned`: default recommendation for daily use. It keeps deterministic policy first,
+  then uses the local embedding classifier for route recall with rules fallback.
+- `hybrid`: rules first, then a local LLM judge only when rules classify the prompt as
+  unknown.
+- `llm`: consults the local LLM judge for every non-policy decision; useful for local
+  experiments, but slower than `learned`.
+
+For the LLM judge, `preferences.router_llm_model` defaults to `llama3.2:3b`. Set it to
+`hf.co/katanemo/Arch-Router-1.5B.gguf` to use Arch-Router's policy-selection prompt:
+
+```yaml
+preferences:
+  router_mode: "hybrid"
+  router_llm_model: "hf.co/katanemo/Arch-Router-1.5B.gguf"
+```
+
+The embedding classifier remains the default because it is faster and cheaper locally.
+Arch-Router can be more accurate on ambiguous prompts, with roughly 0.2-1s of local
+latency depending on hardware. Any parse failure, timeout, or unavailable router model
+falls back to deterministic rules.
 
 ## Design invariant
 
@@ -122,8 +166,17 @@ request always survive verbatim.
 ## Shared embeddings
 
 All learned components (router, tool dispatcher, sensitivity escalator,
-semantic memory) share one cached embedder per request, so a prompt is
-embedded once, not once per component.
+semantic memory) use the configured local embedder. Router, dispatcher, and
+sensitivity calls use a cached classification embedder per request, so a prompt
+is embedded once for those classifiers. Semantic memory uses the same configured
+model with retrieval-specific document/query prompts.
+
+For `nomic-embed-text`, Switchboard prefixes classifier inputs with
+`classification:`, indexed memories with `search_document:`, and memory queries
+with `search_query:`. It also sets `num_ctx` explicitly on embedding calls so
+longer prompts are not silently limited by the default context. For
+`qwen3-embedding:0.6b`, Switchboard prepends a short task instruction before the
+text because the model is instruction-aware.
 
 ## Feedback also teaches the dispatcher
 

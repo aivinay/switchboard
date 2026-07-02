@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Callable
+from typing import Literal
 
 import httpx
 from sqlalchemy.engine import Engine
@@ -29,6 +30,24 @@ from switchboard.app.storage.repositories import MemoryRepository
 
 class EmbeddingUnavailableError(RuntimeError):
     """Raised when the local embedding model cannot be reached."""
+
+
+EmbeddingTask = Literal["classification", "search_document", "search_query"]
+NOMIC_EMBED_CONTEXT = 8192
+
+
+def _embedding_prompt(model: str, text: str, task: EmbeddingTask) -> str:
+    model_name = model.lower()
+    if model_name == "nomic-embed-text":
+        return f"{task}: {text}"
+    if model_name == "qwen3-embedding:0.6b":
+        instructions = {
+            "classification": "Represent this text for routing classification.",
+            "search_document": "Represent this saved memory for retrieval.",
+            "search_query": "Represent this query for retrieving relevant saved memories.",
+        }
+        return f"Instruct: {instructions[task]}\nQuery: {text}"
+    return text
 
 
 class OllamaEmbeddingClient:
@@ -45,11 +64,22 @@ class OllamaEmbeddingClient:
         self.model = model
         self.timeout_s = timeout_s
 
-    def embed(self, text: str) -> list[float]:
+    def embed(
+        self,
+        text: str,
+        *,
+        task: EmbeddingTask = "classification",
+    ) -> list[float]:
+        payload: dict[str, object] = {
+            "model": self.model,
+            "prompt": _embedding_prompt(self.model, text, task),
+        }
+        if self.model.lower() == "nomic-embed-text":
+            payload["options"] = {"num_ctx": NOMIC_EMBED_CONTEXT}
         try:
             response = httpx.post(
                 f"{self.base_url}/api/embeddings",
-                json={"model": self.model, "prompt": text},
+                json=payload,
                 timeout=self.timeout_s,
             )
             response.raise_for_status()
@@ -59,6 +89,15 @@ class OllamaEmbeddingClient:
         if not isinstance(embedding, list) or not embedding:
             raise EmbeddingUnavailableError("Embedding model returned an empty vector.")
         return [float(value) for value in embedding]
+
+    def embed_classification(self, text: str) -> list[float]:
+        return self.embed(text, task="classification")
+
+    def embed_document(self, text: str) -> list[float]:
+        return self.embed(text, task="search_document")
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed(text, task="search_query")
 
 
 class CachedEmbedder:
@@ -157,6 +196,7 @@ class SemanticMemoryService:
         memory_repository: MemoryRepository,
         embedding_repository: MemoryEmbeddingRepository,
         embed: Callable[[str], list[float]] | None = None,
+        query_embed: Callable[[str], list[float]] | None = None,
         embedding_model: str = "nomic-embed-text",
         base_url: str = "http://localhost:11434",
         min_similarity: float = 0.35,
@@ -167,15 +207,14 @@ class SemanticMemoryService:
         self.embedding_model = embedding_model
         self.min_similarity = min_similarity
         self.top_k = top_k
-        self._embed = embed or OllamaEmbeddingClient(
-            base_url=base_url,
-            model=embedding_model,
-        ).embed
+        client = OllamaEmbeddingClient(base_url=base_url, model=embedding_model)
+        self._embed_document = embed or client.embed_document
+        self._embed_query = query_embed or embed or client.embed_query
 
     def index(self, memory: PersonalMemoryRead) -> bool:
         """Embed and store a memory item. Returns False if embedding is unavailable."""
         try:
-            vector = self._embed(f"{memory.title}\n{memory.content}")
+            vector = self._embed_document(f"{memory.title}\n{memory.content}")
         except Exception:
             return False
         self.embedding_repository.upsert(
@@ -202,7 +241,7 @@ class SemanticMemoryService:
         records = self.embedding_repository.list_for_project(project)
         if records:
             try:
-                query_vector = self._embed(query)
+                query_vector = self._embed_query(query)
             except Exception:
                 records = []
             else:

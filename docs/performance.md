@@ -55,11 +55,11 @@ Use `balanced`, keep `max_loaded_models: 2`, and warm models only for the work y
 doing:
 
 ```bash
-switchboard warm ollama/qwen3:8b
+switchboard warm ollama/gemma4:12b
 switchboard loaded-models
 ```
 
-Add `ollama/qwen2.5-coder:7b` while coding. Let `ollama/deepseek-r1:8b` load only for
+Add `ollama/qwen3.5:9b` while coding. Let `ollama/gpt-oss:20b` load only for
 hard planning, debugging, or tradeoff analysis.
 
 ## Benchmarking

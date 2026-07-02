@@ -21,6 +21,7 @@ preferences:
   # low. "llm"/"hybrid" call a small Ollama model instead (slower).
   router_mode: "learned"
   llm_router_model: "llama3.2:3b"
+  router_llm_model: "llama3.2:3b"
   # Learned tool dispatcher: second-chance tool detection when the regex
   # detector misses ("what is 87 divided by 4"). Predictions only count if
   # the actual tool verifies them. Train once with:
@@ -32,13 +33,26 @@ preferences:
   #   switchboard train-sensitivity
   sensitivity_escalator_enabled: true
   sensitivity_escalator_min_confidence: 0.7
-  # Headroom-style heuristic prompt compression before routing.
+  # Prompt/context compression before routing. Keep "heuristic" for the
+  # dependency-free default, or install switchboard-local[headroom] and set
+  # "headroom" to compress recent conversation history with headroom-ai.
   compression_enabled: true
   compression_threshold_tokens: 1000
+  compression_engine: "heuristic"
+  # Optional low-confidence cascade from local answers to premium CLI backends.
+  escalation_enabled: false
+  escalation_confidence_threshold: 0.55
   # Embedding-based long-term semantic memory (local embeddings only).
   semantic_memory_enabled: true
   semantic_memory_top_k: 3
   embedding_model: "nomic-embed-text"
+  local_model_roles:
+    simple: "ollama/gemma4:e4b"
+    private_summary: "ollama/gemma4:12b"
+    general: "ollama/gemma4:12b"
+    coding: "ollama/qwen3.5:9b"
+    reasoning: "ollama/gpt-oss:20b"
+    complex_coding: "ollama/qwen3.5:9b"
   # Allow Claude Code to use its WebSearch tool for live-data questions
   # (pre-approved, uses your Claude subscription's search). Enabled in the
   # starter config; set false for local-only live-data fallback.
@@ -59,6 +73,12 @@ savings:
   default_baseline_model: "manual/claude-web"
   premium_unit_value_usd: null
   assume_premium_for_unknown: false
+
+quota:
+  # Optional user-declared soft budgets. Switchboard never scrapes or assumes
+  # provider limits; blank values keep quota-aware routing disabled.
+  codex_calls_per_5h:
+  claude_calls_per_week:
 
 local_runtime:
   # memory_saver: keep one hot model when possible; good for tighter RAM.

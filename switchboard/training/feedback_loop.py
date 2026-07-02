@@ -256,7 +256,10 @@ def retrain_with_feedback(
             OllamaEmbeddingClient,
         )
 
-        embed = OllamaEmbeddingClient(base_url=base_url, model=embedding_model).embed
+        embed = OllamaEmbeddingClient(
+            base_url=base_url,
+            model=embedding_model,
+        ).embed_classification
 
     try:
         weights, report = train(examples, embed=embed, embedding_model=embedding_model)
@@ -367,7 +370,10 @@ def retrain_dispatcher_with_feedback(
             OllamaEmbeddingClient,
         )
 
-        embed = OllamaEmbeddingClient(base_url=base_url, model=embedding_model).embed
+        embed = OllamaEmbeddingClient(
+            base_url=base_url,
+            model=embedding_model,
+        ).embed_classification
 
     try:
         weights, report = train(

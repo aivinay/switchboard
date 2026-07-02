@@ -16,6 +16,7 @@ Router modes (configured in personal.yaml or via CLI):
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import time
@@ -24,9 +25,11 @@ from dataclasses import dataclass
 
 import httpx
 
-ROUTE_TYPES = ("coding", "reasoning", "local", "unknown")
+ARCH_ROUTER_MODEL = "hf.co/katanemo/Arch-Router-1.5B.gguf"
+ROUTE_TYPES = ("tool", "coding", "reasoning", "local", "unknown")
 
 BACKEND_BY_ROUTE_TYPE = {
+    "tool": "ollama",
     "coding": "codex",
     "reasoning": "claude-code",
     "local": "ollama",
@@ -51,6 +54,31 @@ ROUTER_SYSTEM_PROMPT = (
     "coding tools.\n"
     "Respond with ONLY a JSON object, no prose:\n"
     '{"route_type": "<coding|reasoning|local|unknown>", "confidence": <0.0-1.0>}'
+)
+
+ROUTER_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "route_type": {
+            "type": "string",
+            "enum": ["tool", "coding", "reasoning", "local", "unknown"],
+        },
+        "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+    },
+    "required": ["route_type", "confidence"],
+}
+
+ARCH_ROUTER_POLICY_PROMPT = (
+    "You are a policy router. Select exactly one named policy for the user request.\n"
+    "Policies:\n"
+    "- tool: deterministically answerable by tools such as time, math, units, "
+    "stock, weather, news, or current facts.\n"
+    "- local: small, simple, or private tasks for the local model.\n"
+    "- coding: code, repositories, web/app development, algorithms, debugging, "
+    "or tests.\n"
+    "- reasoning: architecture, design, tradeoffs, planning, or professional review.\n"
+    'Return JSON only: {"policy": "<tool|local|coding|reasoning>", '
+    '"confidence": <0.0-1.0>}'
 )
 
 
@@ -84,15 +112,23 @@ class OllamaRouterClient:
         self.timeout_s = timeout_s
 
     def complete(self, prompt: str) -> str:
+        arch_router = is_arch_router_model(self.model)
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": ROUTER_SYSTEM_PROMPT},
+                {
+                    "role": "system",
+                    "content": ARCH_ROUTER_POLICY_PROMPT
+                    if arch_router
+                    else ROUTER_SYSTEM_PROMPT,
+                },
                 {"role": "user", "content": prompt},
             ],
             "stream": False,
             "options": {"temperature": 0.0, "num_predict": 64},
         }
+        if not arch_router:
+            payload["format"] = ROUTER_JSON_SCHEMA
         try:
             response = httpx.post(
                 f"{self.base_url}/api/chat",
@@ -119,6 +155,7 @@ class LlmRouter:
         max_prompt_chars: int = 2000,
     ) -> None:
         self.model = model
+        self.arch_router = is_arch_router_model(model)
         self.max_prompt_chars = max_prompt_chars
         self._complete = complete or OllamaRouterClient(
             base_url=base_url,
@@ -158,18 +195,40 @@ class LlmRouter:
         )
 
     def _parse(self, raw: str) -> tuple[str, float] | None:
+        route_key = "policy" if self.arch_router else "route_type"
+        allowed_routes = (
+            {"tool", "local", "coding", "reasoning"}
+            if self.arch_router
+            else ROUTE_TYPES
+        )
         match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
         if not match:
+            if self.arch_router:
+                route_type = raw.strip().strip("\"'").lower()
+                if route_type in allowed_routes:
+                    return route_type, 1.0
             return None
         try:
             data = json.loads(match.group(0))
         except json.JSONDecodeError:
-            return None
-        route_type = str(data.get("route_type", "")).strip().lower()
-        if route_type not in ROUTE_TYPES:
+            if not self.arch_router:
+                return None
+            try:
+                parsed = ast.literal_eval(match.group(0))
+            except (SyntaxError, ValueError):
+                return None
+            if not isinstance(parsed, dict):
+                return None
+            data = parsed
+        route_type = str(data.get(route_key, "")).strip().lower()
+        if route_type not in allowed_routes:
             return None
         try:
             confidence = float(data.get("confidence", 0.0))
         except (TypeError, ValueError):
             confidence = 0.0
         return route_type, max(0.0, min(1.0, confidence))
+
+
+def is_arch_router_model(model: str) -> bool:
+    return "arch-router" in model.lower()

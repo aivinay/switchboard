@@ -72,10 +72,10 @@ def test_ollama_provider_uses_provider_model_name(monkeypatch) -> None:
     monkeypatch.setattr(httpx, "AsyncClient", AsyncClient)
     monkeypatch.setattr(OllamaProviderAdapter, "complete_chat", ORIGINAL_OLLAMA_COMPLETE_CHAT)
     model = ModelProfile(
-        model_id="ollama/qwen3:8b",
+        model_id="ollama/gemma4:12b",
         provider="ollama",
-        provider_model_name="qwen3:8b",
-        display_name="Qwen",
+        provider_model_name="gemma4:12b",
+        display_name="Gemma",
         kind=ModelKind.LOCAL,
         quality_tier=QualityTier.MEDIUM,
     )
@@ -96,4 +96,4 @@ def test_ollama_provider_uses_provider_model_name(monkeypatch) -> None:
     response = asyncio.run(OllamaProviderAdapter().complete_chat(request, model))
 
     assert response.content == "local answer"
-    assert captured["json"]["model"] == "qwen3:8b"  # type: ignore[index]
+    assert captured["json"]["model"] == "gemma4:12b"  # type: ignore[index]

@@ -35,6 +35,11 @@ from switchboard.app.services.core_factory import (
     build_semantic_memory,
 )
 from switchboard.app.services.local_runtime import OllamaRuntimeService
+from switchboard.app.services.model_recommendations import (
+    apply_local_model_pack,
+    detect_total_ram_bytes,
+    recommend_local_model_pack,
+)
 from switchboard.app.services.personal_switchboard import (
     PersonalRoutingError,
     PersonalSwitchboardService,
@@ -568,6 +573,49 @@ def personal_ask_command(args: argparse.Namespace) -> None:
 
 
 def models_command(args: argparse.Namespace) -> None:
+    if args.recommend:
+        settings = get_settings()
+        catalogue = ModelCatalogue.from_yaml(settings.models_config_path)
+        total_ram_bytes = detect_total_ram_bytes()
+        recommendation = recommend_local_model_pack(
+            catalogue,
+            total_ram_bytes=total_ram_bytes,
+        )
+        if total_ram_bytes is None:
+            print(f"Detected RAM: unknown (using {recommendation.tier} tier)")
+        else:
+            print(
+                "Detected RAM: "
+                f"{total_ram_bytes / (1024**3):.1f} GiB ({recommendation.tier} tier)"
+            )
+        print("Recommended Ollama pack:")
+        for role in recommendation.roles:
+            print(f"  {role.role:10} {role.model_id}  (pull: ollama pull {role.ollama_tag})")
+            if role.notes and "Ollama >= 0.14.3" in role.notes:
+                print(f"             note: {role.notes}")
+        for note in recommendation.notes:
+            print(f"Note: {note}")
+        print("Pull commands:")
+        for command in recommendation.pull_commands:
+            print(f"  {command}")
+        print("No models were pulled automatically.")
+        if args.apply:
+            if not args.yes:
+                answer = input(
+                    "Apply these local role mappings to personal.yaml/models.yaml? "
+                    "Type 'apply' to continue: "
+                )
+                if answer.strip().lower() != "apply":
+                    print("No changes made.")
+                    return
+            apply_local_model_pack(
+                personal_config_path=settings.personal_config_path,
+                models_config_path=settings.models_config_path,
+                recommendation=recommendation,
+            )
+            print("Updated local role mappings and enabled selected model profiles.")
+        return
+
     for model in build_service().models():
         enabled = "enabled" if model.provider_enabled and model.enabled else "disabled"
         scarce = "scarce" if model.scarce else "not scarce"
@@ -632,6 +680,33 @@ def metrics_command(args: argparse.Namespace) -> None:
             print(f"  routing: {record.routing_reason}")
         if record.error_message:
             print(f"  error: {record.error_message}")
+
+
+def quota_command(args: argparse.Namespace) -> None:
+    status = build_core_service().quota_status()
+    if args.format == "json":
+        print_json(status)
+        return
+    enabled = "enabled" if status.get("enabled") else "disabled (budgets unset)"
+    print("Premium quota ledger: estimate-only, from local backend metrics")
+    print(f"Quota-aware routing: {enabled}")
+    windows = status.get("windows", {})
+    if not isinstance(windows, dict):
+        return
+    for backend in ("codex", "claude-code"):
+        window = windows.get(backend)
+        if not isinstance(window, dict):
+            continue
+        budget = window.get("budget")
+        budget_text = "unset" if budget is None else str(budget)
+        remaining = window.get("remaining")
+        remaining_text = "-" if remaining is None else str(remaining)
+        state = "constrained" if window.get("constrained") else "ok"
+        print(
+            f"{window.get('label', backend):12} {state:12} "
+            f"used={window.get('used', 0)}/{budget_text} "
+            f"window={window.get('window')} remaining={remaining_text}"
+        )
 
 
 def usage_command(args: argparse.Namespace) -> None:
@@ -918,6 +993,18 @@ def _embedding_unavailable_exit(model: str) -> SystemExit:
     )
 
 
+def configured_embedding_model(cli_value: str | None) -> str:
+    if cli_value:
+        return cli_value
+    settings = get_settings()
+    config = PersonalConfig.from_yaml(settings.personal_config_path)
+    return config.preferences.embedding_model
+
+
+def print_sync_config_reminder() -> None:
+    print("Reminder: run `make sync-config` after updating config weights.")
+
+
 def train_router_command(args: argparse.Namespace) -> None:
     from switchboard.training.augment import augment_examples
     from switchboard.training.router_dataset import (
@@ -954,16 +1041,18 @@ def train_router_command(args: argparse.Namespace) -> None:
         print(f"Built dataset: {len(examples)} examples -> {dataset_path}")
         print(f"Class counts: {class_counts(examples)}")
 
+    embedding_model = configured_embedding_model(args.embedding_model)
     print("Embedding and training (requires Ollama embedding model)...", flush=True)
     try:
         report = train_from_files(
             dataset_path=dataset_path,
             output_path=args.output,
-            embedding_model=args.embedding_model,
+            embedding_model=embedding_model,
         )
     except (EmbeddingUnavailableError, httpx.HTTPError) as exc:
-        raise _embedding_unavailable_exit(args.embedding_model) from exc
+        raise _embedding_unavailable_exit(embedding_model) from exc
     print(report_to_text(report, args.output))
+    print_sync_config_reminder()
 
 
 def train_dispatcher_command(args: argparse.Namespace) -> None:
@@ -980,25 +1069,27 @@ def train_dispatcher_command(args: argparse.Namespace) -> None:
     print(f"Dataset: {len(examples)} examples")
     print(f"Class counts: {class_counts(examples)}")
 
+    embedding_model = configured_embedding_model(args.embedding_model)
     print("Embedding and training (requires Ollama embedding model)...", flush=True)
     from switchboard.app.services.semantic_memory import OllamaEmbeddingClient
 
-    embed = OllamaEmbeddingClient(model=args.embedding_model).embed
+    embed = OllamaEmbeddingClient(model=embedding_model).embed_classification
     try:
         weights, report = train(
             examples,
             embed=embed,
-            embedding_model=args.embedding_model,
+            embedding_model=embedding_model,
             classes=TOOL_CLASSES,
             golden=dispatcher_golden_examples(),
         )
     except (EmbeddingUnavailableError, httpx.HTTPError) as exc:
-        raise _embedding_unavailable_exit(args.embedding_model) from exc
+        raise _embedding_unavailable_exit(embedding_model) from exc
     weights.metadata["golden_accuracy"] = report.golden_accuracy
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(weights.to_dict(), indent=2), encoding="utf-8")
     print(report_to_text(report, args.output))
+    print_sync_config_reminder()
 
 
 def train_sensitivity_command(args: argparse.Namespace) -> None:
@@ -1016,25 +1107,27 @@ def train_sensitivity_command(args: argparse.Namespace) -> None:
     print(f"Dataset: {len(examples)} examples")
     print(f"Class counts: {class_counts(examples)}")
 
+    embedding_model = configured_embedding_model(args.embedding_model)
     print("Embedding and training (requires Ollama embedding model)...", flush=True)
     from switchboard.app.services.semantic_memory import OllamaEmbeddingClient
 
-    embed = OllamaEmbeddingClient(model=args.embedding_model).embed
+    embed = OllamaEmbeddingClient(model=embedding_model).embed_classification
     try:
         weights, report = train(
             examples,
             embed=embed,
-            embedding_model=args.embedding_model,
+            embedding_model=embedding_model,
             classes=SENSITIVITY_CLASSES,
             golden=sensitivity_golden_examples(),
         )
     except (EmbeddingUnavailableError, httpx.HTTPError) as exc:
-        raise _embedding_unavailable_exit(args.embedding_model) from exc
+        raise _embedding_unavailable_exit(embedding_model) from exc
     weights.metadata["golden_accuracy"] = report.golden_accuracy
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(weights.to_dict(), indent=2), encoding="utf-8")
     print(report_to_text(report, args.output))
+    print_sync_config_reminder()
 
 
 def bench_quality_command(args: argparse.Namespace) -> None:
@@ -1227,6 +1320,8 @@ def doctor_command(args: argparse.Namespace) -> None:
     print(f"Performance mode: {config.local_runtime.performance_mode}")
     print(f"Max loaded models: {config.local_runtime.max_loaded_models}")
     print(f"Ollama keep_alive: {config.local_runtime.keep_alive}")
+    print("Local model recommendation: run `switchboard models --recommend`")
+    print("GLM 4.7 Flash requires Ollama >= 0.14.3.")
 
     ollama = config.providers.get("ollama")
     print(f"Ollama provider enabled: {bool(ollama and ollama.enabled)}")
@@ -1389,6 +1484,21 @@ def make_parser() -> argparse.ArgumentParser:
     ask.set_defaults(func=ask_command)
 
     models = subparsers.add_parser("models", help="List configured models")
+    models.add_argument(
+        "--recommend",
+        action="store_true",
+        help="Recommend an Ollama model pack for this machine",
+    )
+    models.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply the recommended local role mappings after confirmation",
+    )
+    models.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm --apply noninteractively",
+    )
     models.set_defaults(func=models_command)
 
     backends = subparsers.add_parser("backends", help="List Switchboard Core backends")
@@ -1400,6 +1510,10 @@ def make_parser() -> argparse.ArgumentParser:
     metrics.add_argument("--last", type=int, default=20)
     metrics.add_argument("--format", choices=["text", "json"], default="text")
     metrics.set_defaults(func=metrics_command)
+
+    quota = subparsers.add_parser("quota", help="Show user-declared premium quota usage")
+    quota.add_argument("--format", choices=["text", "json"], default="text")
+    quota.set_defaults(func=quota_command)
 
     usage = subparsers.add_parser("usage", help="Show personal usage summary")
     usage.set_defaults(func=usage_command)
@@ -1493,7 +1607,7 @@ def make_parser() -> argparse.ArgumentParser:
         action="append",
         help="Run only the named conditions (default: all)",
     )
-    bench_quality.add_argument("--judge-model", help="Ollama judge model (default qwen3:8b)")
+    bench_quality.add_argument("--judge-model", help="Ollama judge model (default gemma4:12b)")
     bench_quality.add_argument("--timeout", type=int, default=120)
     bench_quality.add_argument("--json", action="store_true")
     bench_quality.add_argument("--output", help="Write the full JSON report to this file")
@@ -1507,7 +1621,10 @@ def make_parser() -> argparse.ArgumentParser:
     train_router.add_argument(
         "--output", default="config/router_weights.json", help="Weights output path"
     )
-    train_router.add_argument("--embedding-model", default="nomic-embed-text")
+    train_router.add_argument(
+        "--embedding-model",
+        help="Embedding model for training (default: preferences.embedding_model)",
+    )
     train_router.add_argument(
         "--external",
         action="store_true",
@@ -1533,7 +1650,10 @@ def make_parser() -> argparse.ArgumentParser:
         default="config/tool_dispatcher_weights.json",
         help="Weights output path",
     )
-    train_dispatcher.add_argument("--embedding-model", default="nomic-embed-text")
+    train_dispatcher.add_argument(
+        "--embedding-model",
+        help="Embedding model for training (default: preferences.embedding_model)",
+    )
     train_dispatcher.set_defaults(func=train_dispatcher_command)
 
     train_sensitivity = subparsers.add_parser(
@@ -1545,7 +1665,10 @@ def make_parser() -> argparse.ArgumentParser:
         default="config/sensitivity_weights.json",
         help="Weights output path",
     )
-    train_sensitivity.add_argument("--embedding-model", default="nomic-embed-text")
+    train_sensitivity.add_argument(
+        "--embedding-model",
+        help="Embedding model for training (default: preferences.embedding_model)",
+    )
     train_sensitivity.set_defaults(func=train_sensitivity_command)
 
     feedback_examples = subparsers.add_parser(

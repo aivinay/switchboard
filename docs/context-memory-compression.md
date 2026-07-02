@@ -55,6 +55,9 @@ and stack traces are not flattened.
 
 ## Compression Behavior
 
+Switchboard decides which brain should answer. Compression only shrinks what
+that brain reads.
+
 Compression has two separate metadata families:
 
 - `compression_*`: request-level compression for oversized raw prompts.
@@ -78,7 +81,29 @@ Useful controls:
 preferences:
   compression_enabled: true
   compression_threshold_tokens: 1000
+  compression_engine: "heuristic"
 ```
+
+`compression_engine` defaults to `heuristic` and keeps the core install dependency-free.
+To try the optional Headroom adapter:
+
+```bash
+pip install "switchboard-local[headroom]"
+```
+
+```yaml
+preferences:
+  compression_enabled: true
+  compression_engine: "headroom"
+```
+
+The Headroom adapter is replace-by-choice, not default behavior. It sends only the
+`<recent_conversation>` block to the `headroom-ai` `compress(messages)` surface. The
+instruction preamble, `<trusted_facts>`, `<long_term_memory>`, and
+`<current_user_request>` are spliced back in byte-for-byte. If `headroom-ai` is not
+installed, cannot download a model, returns an unsupported shape, or raises at runtime,
+Switchboard logs the failure once, records `compression_engine: "heuristic"` plus a
+`headroom_fallback_reason`, and uses the built-in heuristic for that request.
 
 Per-request CLI override:
 
@@ -138,6 +163,7 @@ Look for these fields with `--show-metadata`:
 - `context_compression_original_tokens`
 - `context_compression_compressed_tokens`
 - `context_compression_tokens_saved`
+- `compression_engine`
 - `memory_retrieved_count`
 - `semantic_memory_used`
 - `context_recent_message_count`
@@ -165,5 +191,6 @@ the place to inspect token reduction for a specific model-boundary prompt.
   Google News RSS and Yahoo finance-style stock grounding.
 - Semantic-memory injection depends on indexed embeddings. Text search is available for
   direct memory search even when embeddings are offline.
-- Compression is heuristic. It is designed to preserve facts and intent, not to be a
-  semantic summarizer with correctness guarantees.
+- The default compressor is heuristic. Optional Headroom compression is a history-only
+  adapter with the same protected-block contract, not a license to delete grounded
+  facts to fit a budget.
