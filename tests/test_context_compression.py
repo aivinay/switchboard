@@ -1,9 +1,20 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from switchboard.app.core.config import Settings
 from switchboard.app.models.internal import Sensitivity, TaskType
-from switchboard.app.services.compression_layer import HeadroomCompressionLayer
+from switchboard.app.services.compression_layer import (
+    HeadroomCompressionLayer,
+    HeadroomLibCompressionLayer,
+)
+from switchboard.app.services.container import build_container
 from switchboard.app.services.context_compression import ContextCompressionService
+from switchboard.app.services.core_factory import build_configured_core_service
 from switchboard.app.services.cost import CostEstimator
+from switchboard.app.storage.db import create_db_engine, init_db
+
+ROOT = Path(__file__).resolve().parents[1]
 
 PREAMBLE = (
     "You are replying to the user through Switchboard.\n"
@@ -205,3 +216,99 @@ def test_headroom_layer_compress_context_reports_scope_and_keeps_facts() -> None
     request_block = "<current_user_request>\nwhat is tesla trading at?\n</current_user_request>"
     assert request_block in compressed
     assert len(compressed) < len(context)
+
+
+def test_headroom_lib_layer_only_passes_recent_conversation_to_headroom() -> None:
+    seen: list[object] = []
+
+    def fake_compress(messages: object) -> object:
+        seen.append(messages)
+        return [{"role": "user", "content": "compressed history"}]
+
+    layer = HeadroomLibCompressionLayer(
+        compress_fn=fake_compress,
+        threshold_tokens=200,
+    )
+    context = assembled_context()
+
+    compressed, stats = layer.compress_context(context)
+
+    assert stats["compression_engine"] == "headroom"
+    assert TRUSTED_FACTS_BLOCK in compressed
+    assert MEMORY_BLOCK in compressed
+    assert (
+        "<current_user_request>\nwhat is tesla trading at?\n</current_user_request>"
+        in compressed
+    )
+    assert "compressed history" in compressed
+    assert seen == [
+        [
+            {
+                "role": "user",
+                "content": context.split("<recent_conversation>\n", 1)[1].split(
+                    "\n</recent_conversation>",
+                    1,
+                )[0],
+            }
+        ]
+    ]
+
+
+def test_headroom_lib_layer_respects_threshold_before_external_call() -> None:
+    called = False
+
+    def fake_compress(messages: object) -> object:
+        nonlocal called
+        called = True
+        return [{"role": "user", "content": "compressed history"}]
+
+    layer = HeadroomLibCompressionLayer(
+        compress_fn=fake_compress,
+        threshold_tokens=100_000,
+    )
+    context = assembled_context()
+
+    compressed, stats = layer.compress_context(context)
+
+    assert compressed == context
+    assert called is False
+    assert stats["compression_engine"] == "headroom"
+    assert stats["context_compression_used"] is False
+    assert stats["context_compression_scope"] == "none"
+
+
+def test_headroom_lib_layer_falls_back_to_heuristic_on_runtime_error() -> None:
+    def broken_compress(messages: object) -> object:
+        raise RuntimeError("model download failed")
+
+    layer = HeadroomLibCompressionLayer(
+        compress_fn=broken_compress,
+        threshold_tokens=200,
+    )
+    context = assembled_context()
+
+    compressed, stats = layer.compress_context(context)
+
+    assert stats["compression_engine"] == "heuristic"
+    assert "model download failed" in str(stats["headroom_fallback_reason"])
+    assert TRUSTED_FACTS_BLOCK in compressed
+    assert MEMORY_BLOCK in compressed
+
+
+def test_headroom_compression_engine_configures_lib_layer(tmp_path) -> None:
+    settings = Settings(
+        environment="test",
+        database_url=f"sqlite:///{tmp_path / 'headroom.db'}",
+        models_config_path=str(ROOT / "config" / "models.yaml"),
+        policies_config_path=str(ROOT / "config" / "policies.yaml"),
+        personal_config_path=str(ROOT / "config" / "personal.yaml"),
+    )
+    engine = create_db_engine(settings.database_url)
+    init_db(engine)
+    container = build_container(settings, engine)
+    container.personal_config.preferences.compression_enabled = True
+    container.personal_config.preferences.compression_engine = "headroom"
+
+    service = build_configured_core_service(container)
+
+    assert isinstance(service.compression, HeadroomLibCompressionLayer)

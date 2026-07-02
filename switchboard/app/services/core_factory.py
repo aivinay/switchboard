@@ -11,7 +11,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 from switchboard.app.backends.registry import BackendRegistry
-from switchboard.app.services.compression_layer import HeadroomCompressionLayer
+from switchboard.app.services.compression_layer import (
+    CompressionLayer,
+    HeadroomCompressionLayer,
+    HeadroomLibCompressionLayer,
+)
 from switchboard.app.services.container import ServiceContainer
 from switchboard.app.services.finance_providers import finance_provider_by_name
 from switchboard.app.services.finance_tool import StockPriceTool
@@ -127,11 +131,16 @@ def build_configured_core_service(
     compression_enabled = (
         compression if compression is not None else preferences.compression_enabled
     )
-    compression_layer = (
-        HeadroomCompressionLayer(threshold_tokens=preferences.compression_threshold_tokens)
-        if compression_enabled
-        else None
-    )
+    compression_layer: CompressionLayer | None = None
+    if compression_enabled:
+        if preferences.compression_engine == "headroom":
+            compression_layer = HeadroomLibCompressionLayer(
+                threshold_tokens=preferences.compression_threshold_tokens
+            )
+        else:
+            compression_layer = HeadroomCompressionLayer(
+                threshold_tokens=preferences.compression_threshold_tokens
+            )
 
     memory_enabled = (
         semantic_memory if semantic_memory is not None else preferences.semantic_memory_enabled

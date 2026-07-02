@@ -56,6 +56,7 @@ class PersonalPreferences(BaseModel):
     # Headroom-style heuristic prompt compression before routing.
     compression_enabled: bool = False
     compression_threshold_tokens: int = 1000
+    compression_engine: str = "heuristic"
     # Optional post-answer local confidence check and premium escalation.
     escalation_enabled: bool = False
     escalation_confidence_threshold: float = 0.55

@@ -65,6 +65,9 @@ finance = [
 router = [
     "numpy>=1.26",
 ]
+headroom = [
+    "headroom-ai",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

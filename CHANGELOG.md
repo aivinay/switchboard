@@ -20,6 +20,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   escalation for low-confidence non-sensitive Ollama answers.
 - Added first-class Arch-Router LLM judge support via `router_llm_model`, with
   policy-format prompting and fail-closed parsing.
+- Added optional `headroom-ai` compression support behind the `headroom` extra
+  and `preferences.compression_engine: "headroom"`, while keeping the
+  dependency-free heuristic as the default.
 
 ### Fixed
 - Made `switchboard route` previews honor private mode when Ollama is

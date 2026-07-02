@@ -113,6 +113,29 @@ Tests:
 - Focused LLM-router tests passed.
 - Phase check: `make check`, 667 collected, passed.
 
+### Phase 6 - optional Headroom integration for compression
+
+Status: done.
+
+- Added the optional `headroom` extra (`headroom-ai`) without adding anything
+  to the core install.
+- Added `preferences.compression_engine`, defaulting to `heuristic`.
+- Added `HeadroomLibCompressionLayer`, used only when the preference is
+  `"headroom"` and compression is enabled.
+- Preserved the protected-block contract: only `<recent_conversation>` is
+  passed to Headroom; `<trusted_facts>`, `<long_term_memory>`, and
+  `<current_user_request>` are kept byte-identical.
+- Added fail-closed fallback for missing imports, unsupported return shapes,
+  model-download/runtime errors, and no-savings results. Fallback records
+  `headroom_fallback_reason` and uses the existing heuristic compressor.
+- Kept small contexts below the configured threshold as no-ops before touching
+  the optional Headroom import path.
+
+Tests:
+
+- Focused compression tests: 14 passed.
+- Phase check: `make check`, 671 collected, passed.
+
 ## Manual Follow-Ups
 
 Recommended 2026 local pulls:
@@ -173,6 +196,18 @@ preferences:
   router_llm_model: "hf.co/katanemo/Arch-Router-1.5B.gguf"
 ```
 
+Try optional Headroom compression:
+
+```bash
+pip install "switchboard[headroom]"
+```
+
+```yaml
+preferences:
+  compression_enabled: true
+  compression_engine: "headroom"
+```
+
 ## Draft PR Description
 
 ### Summary
@@ -191,6 +226,8 @@ privacy floor and local-first routing guarantees.
 - Phase 4: disabled-by-default local answer-confidence check and privacy-preserving
   one-hop escalation for weak local answers.
 - Phase 5: Arch-Router policy judge support and structured generic LLM-router output.
+- Phase 6: optional Headroom compression adapter with protected-block preservation and
+  heuristic fallback.
 
 ### Test Evidence
 
@@ -200,6 +237,7 @@ privacy floor and local-first routing guarantees.
 - Phase 3: `make check`, 657 tests collected, all passed.
 - Phase 4: `make check`, 662 tests collected, all passed.
 - Phase 5: `make check`, 667 tests collected, all passed.
+- Phase 6: `make check`, 671 tests collected, all passed.
 
 ### Invariant Checklist
 
@@ -207,6 +245,8 @@ privacy floor and local-first routing guarantees.
 - Sensitive content is never routed to subscription/cloud fallback when private mode
   flags it.
 - Learned/optional paths fail closed to deterministic routing.
+- Optional Headroom compression only sees recent conversation history and fails closed
+  to the dependency-free heuristic.
 - Telemetry remains metadata-only.
 - README benchmark numbers, evaluation claims, and DOI references were not changed.
 - New runtime dependencies were not added to the core install.
