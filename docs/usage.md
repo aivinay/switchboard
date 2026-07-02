@@ -9,6 +9,10 @@ switchboard savings --days 7
 switchboard loaded-models
 ```
 
+The web UI's Savings drawer uses the same local metrics plus `/api/dashboard` and
+`/api/quota`; it shows request counts, token-savings estimates, declared soft-budget
+windows, and feedback counts without dollar figures.
+
 ## Route And Ask
 
 `switchboard route` previews the backend decision without calling a model:

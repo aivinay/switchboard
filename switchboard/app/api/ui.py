@@ -510,7 +510,19 @@ def dashboard(request: Request) -> dict[str, object]:
     usage_by_backend = Counter(record.backend for record in records)
     successful = [record for record in records if record.success]
     premium_calls = sum(1 for record in successful if record.backend in PREMIUM_BACKENDS)
-    premium_avoided = sum(1 for record in successful if record.backend not in PREMIUM_BACKENDS)
+    tool_calls = sum(
+        1
+        for record in successful
+        if record.backend in {"switchboard", "time"} or record.metadata.get("grounded_by_tool")
+    )
+    local_calls = sum(
+        1
+        for record in successful
+        if record.backend not in PREMIUM_BACKENDS
+        and record.backend not in {"switchboard", "time"}
+        and not record.metadata.get("grounded_by_tool")
+    )
+    premium_avoided = local_calls + tool_calls
     compression_saved = 0
     routing_saved = 0
     for record in records:
@@ -527,6 +539,12 @@ def dashboard(request: Request) -> dict[str, object]:
         counts_by_day[key]["requests"] += 1
         if record.success and record.backend in PREMIUM_BACKENDS:
             counts_by_day[key]["premium_calls"] += 1
+        elif record.success and (
+            record.backend in {"switchboard", "time"} or record.metadata.get("grounded_by_tool")
+        ):
+            counts_by_day[key]["tool_calls"] += 1
+        elif record.success:
+            counts_by_day[key]["local_calls"] += 1
     for days_ago in range(6, -1, -1):
         day = (now - timedelta(days=days_ago)).date().isoformat()
         counts = counts_by_day.get(day, Counter())
@@ -534,15 +552,23 @@ def dashboard(request: Request) -> dict[str, object]:
             {
                 "date": day,
                 "requests": counts.get("requests", 0),
+                "local_calls": counts.get("local_calls", 0),
+                "tool_calls": counts.get("tool_calls", 0),
                 "premium_calls": counts.get("premium_calls", 0),
             }
         )
+    feedback_summary = container.personal_telemetry_repository.feedback_summary()
 
     return {
         "window_days": 7,
         "total_requests": len(records),
         "premium_calls": premium_calls,
         "premium_calls_avoided_vs_always_premium": premium_avoided,
+        "handled_requests": {
+            "local": local_calls,
+            "tools": tool_calls,
+            "premium": premium_calls,
+        },
         "estimated_tokens_saved": {
             "compression": compression_saved,
             "routing": routing_saved,
@@ -550,6 +576,13 @@ def dashboard(request: Request) -> dict[str, object]:
         },
         "usage_by_backend": dict(usage_by_backend),
         "last_7_days": trend,
+        "feedback": {
+            "total": feedback_summary["total"],
+            "good": feedback_summary["positive"],
+            "bad": feedback_summary["bad"],
+            "corrected": feedback_summary["wrong_route"],
+            "pending_corrections": feedback_pending_count(container),
+        },
     }
 
 

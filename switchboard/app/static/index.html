@@ -51,25 +51,6 @@
         </div>
       </header>
 
-      <section id="dashboard" class="dashboard" hidden>
-        <div class="dashboard-grid">
-          <div>
-            <span class="metric-label">Premium avoided</span>
-            <strong id="metric-premium-avoided">0</strong>
-          </div>
-          <div>
-            <span class="metric-label">Tokens saved</span>
-            <strong id="metric-tokens-saved">0</strong>
-          </div>
-          <div>
-            <span class="metric-label">Premium calls</span>
-            <strong id="metric-premium-calls">0</strong>
-          </div>
-        </div>
-        <div id="backend-usage" class="backend-usage"></div>
-        <div id="trend" class="trend" aria-label="Last 7 days"></div>
-      </section>
-
       <section id="messages" class="messages" aria-live="polite"></section>
 
       <form id="chat-form" class="composer">
@@ -96,6 +77,63 @@
         </div>
       </form>
     </main>
+    <div id="dashboard-scrim" class="dashboard-scrim" hidden></div>
+    <aside id="dashboard" class="dashboard-drawer" aria-label="Savings" hidden>
+      <div class="dashboard-header">
+        <div>
+          <span class="metric-label">Savings</span>
+          <h2>Premium calls avoided</h2>
+        </div>
+        <button id="dashboard-close" class="icon-button" type="button" aria-label="Close savings">
+          ×
+        </button>
+      </div>
+      <section class="dashboard-hero">
+        <strong id="metric-premium-avoided">0</strong>
+        <p id="dashboard-subtitle">No activity yet.</p>
+        <div id="dashboard-stack" class="stacked-bar" aria-label="Handled requests this week"></div>
+        <div class="stacked-legend">
+          <span><i class="legend-local"></i>local = your machine</span>
+          <span><i class="legend-tools"></i>tools = live-data lookups</span>
+          <span><i class="legend-premium"></i>premium = your Codex/Claude subscriptions</span>
+        </div>
+      </section>
+      <p id="dashboard-empty" class="dashboard-empty" hidden>
+        No activity yet — ask something and Switchboard starts counting what it saves you.
+      </p>
+      <section class="dashboard-section">
+        <h3>Quota windows</h3>
+        <p id="quota-teaser" class="quota-teaser" hidden>
+          Set soft budgets in personal.yaml to watch your Codex 5-hour / Claude weekly windows.
+        </p>
+        <div id="drawer-quota-meters" class="drawer-quota-meters"></div>
+      </section>
+      <section class="dashboard-section">
+        <h3>Tokens saved</h3>
+        <div class="dashboard-grid">
+          <div>
+            <span class="metric-label">Compression</span>
+            <strong id="metric-tokens-compression">0</strong>
+            <p>Context shortened before model calls.</p>
+          </div>
+          <div>
+            <span class="metric-label">Local routing</span>
+            <strong id="metric-tokens-routing">0</strong>
+            <p>Premium prompt tokens avoided by local/tool routes.</p>
+          </div>
+        </div>
+      </section>
+      <section class="dashboard-section">
+        <h3>7-day trend</h3>
+        <div id="trend" class="trend" aria-label="Last 7 days"></div>
+      </section>
+      <section class="dashboard-section">
+        <h3>Feedback quality</h3>
+        <p id="feedback-quality" class="feedback-quality">No ratings yet.</p>
+      </section>
+      <div id="backend-usage" class="backend-usage" hidden></div>
+      <strong id="metric-premium-calls" hidden>0</strong>
+    </aside>
     <script src="/ui/static/state.js" defer></script>
     <script src="/ui/static/overlays.js" defer></script>
     <script src="/ui/static/app.js" defer></script>

@@ -10,14 +10,23 @@ const modelMenu = document.querySelector("#model-menu");
 const quotaMeters = document.querySelector("#quota-meters");
 const dashboard = document.querySelector("#dashboard");
 const dashboardToggle = document.querySelector("#dashboard-toggle");
+const dashboardClose = document.querySelector("#dashboard-close");
+const dashboardScrim = document.querySelector("#dashboard-scrim");
+const dashboardSubtitle = document.querySelector("#dashboard-subtitle");
+const dashboardStack = document.querySelector("#dashboard-stack");
+const dashboardEmpty = document.querySelector("#dashboard-empty");
+const drawerQuotaMeters = document.querySelector("#drawer-quota-meters");
+const quotaTeaser = document.querySelector("#quota-teaser");
 const privacyFloor = document.querySelector("#privacy-floor");
 const privacyFloorPopover = document.querySelector("#privacy-floor-popover");
 const privateChatToggle = document.querySelector("#private-chat-toggle");
 const modelLockNote = document.querySelector("#model-lock-note");
 const newChatButton = document.querySelector("#new-chat");
 const metricPremiumAvoided = document.querySelector("#metric-premium-avoided");
-const metricTokensSaved = document.querySelector("#metric-tokens-saved");
+const metricTokensCompression = document.querySelector("#metric-tokens-compression");
+const metricTokensRouting = document.querySelector("#metric-tokens-routing");
 const metricPremiumCalls = document.querySelector("#metric-premium-calls");
+const feedbackQuality = document.querySelector("#feedback-quality");
 const backendUsage = document.querySelector("#backend-usage");
 const trend = document.querySelector("#trend");
 const sessionStorageKey = SB.storageKeys.sessionId;
@@ -36,6 +45,7 @@ let modelLabels = { auto: "Auto" };
 let modelOptions = [];
 let modelMenuOverlay = null;
 let privacyFloorOverlay = null;
+let dashboardOverlay = null;
 let modelBeforePrivate = currentModel === "ollama" ? "auto" : currentModel;
 let privateOffConfirmed = false;
 
@@ -652,46 +662,169 @@ function renderQuotaMeters(payload) {
   quotaMeters.hidden = quotaMeters.children.length === 0;
 }
 
+function quotaFillClass(window) {
+  if (window.constrained) {
+    return "constrained";
+  }
+  if (!window.budget) {
+    return "";
+  }
+  const ratio = window.used / window.budget;
+  if (ratio >= 0.75) {
+    return "warning";
+  }
+  return "";
+}
+
+function renderDashboardQuota(payload) {
+  if (!drawerQuotaMeters || !quotaTeaser) {
+    return;
+  }
+  drawerQuotaMeters.textContent = "";
+  if (!payload || !payload.enabled) {
+    quotaTeaser.hidden = false;
+    return;
+  }
+  quotaTeaser.hidden = true;
+  for (const backend of ["codex", "claude-code"]) {
+    const window = payload.windows?.[backend];
+    if (!window || window.budget === null || window.budget === undefined) {
+      continue;
+    }
+    const meter = document.createElement("div");
+    meter.className = "drawer-quota-meter";
+    const header = document.createElement("div");
+    const label = document.createElement("span");
+    label.textContent = window.label;
+    const value = document.createElement("strong");
+    value.textContent = `${window.used}/${window.budget}`;
+    header.appendChild(label);
+    header.appendChild(value);
+    const bar = document.createElement("span");
+    bar.className = "quota-bar drawer-quota-bar";
+    const fill = document.createElement("span");
+    fill.style.width = `${Math.min(100, Math.round((window.used / window.budget) * 100))}%`;
+    const tone = quotaFillClass(window);
+    if (tone) {
+      fill.classList.add(tone);
+    }
+    bar.appendChild(fill);
+    meter.appendChild(header);
+    meter.appendChild(bar);
+    drawerQuotaMeters.appendChild(meter);
+  }
+  quotaTeaser.hidden = drawerQuotaMeters.children.length !== 0;
+}
+
+function renderStackedBar(handled, total) {
+  if (!dashboardStack) {
+    return;
+  }
+  dashboardStack.textContent = "";
+  const segments = [
+    ["local", handled.local || 0],
+    ["tools", handled.tools || 0],
+    ["premium", handled.premium || 0],
+  ];
+  const denominator = Math.max(1, total || segments.reduce((sum, item) => sum + item[1], 0));
+  for (const [name, count] of segments) {
+    const segment = document.createElement("span");
+    segment.className = `stacked-segment ${name}`;
+    segment.style.width = `${Math.round((count / denominator) * 100)}%`;
+    segment.title = `${name}: ${count}`;
+    dashboardStack.appendChild(segment);
+  }
+}
+
+function renderTrend(days) {
+  trend.textContent = "";
+  const maxRequests = Math.max(1, ...((days || []).map((day) => day.requests)));
+  for (const day of days || []) {
+    const item = document.createElement("div");
+    item.className = "trend-day";
+    const bar = document.createElement("span");
+    bar.className = "trend-bar";
+    bar.style.height = `${Math.max(8, Math.round((day.requests / maxRequests) * 58))}px`;
+    bar.title = `${day.date}: ${day.requests} requests, ${day.premium_calls} premium`;
+    if (!day.requests) {
+      bar.classList.add("empty");
+    } else {
+      const local = document.createElement("span");
+      local.className = "trend-segment local";
+      const tools = document.createElement("span");
+      tools.className = "trend-segment tools";
+      const premium = document.createElement("span");
+      premium.className = "trend-segment premium";
+      local.style.flexGrow = String(day.local_calls || 0);
+      tools.style.flexGrow = String(day.tool_calls || 0);
+      premium.style.flexGrow = String(day.premium_calls || 0);
+      bar.appendChild(premium);
+      bar.appendChild(tools);
+      bar.appendChild(local);
+    }
+    const label = document.createElement("span");
+    label.className = "trend-label";
+    label.textContent = day.date.slice(5);
+    item.appendChild(bar);
+    item.appendChild(label);
+    trend.appendChild(item);
+  }
+}
+
+function renderFeedbackQuality(feedback) {
+  if (!feedbackQuality) {
+    return;
+  }
+  const total = feedback?.total || 0;
+  if (!total) {
+    feedbackQuality.textContent = "No ratings yet.";
+    return;
+  }
+  feedbackQuality.textContent = `You rated ${formatNumber(total)} answers — ${formatNumber(
+    feedback.good
+  )} good, ${formatNumber(feedback.corrected)} corrected · ${formatNumber(
+    feedback.pending_corrections
+  )} corrections pending`;
+}
+
 function renderDashboard(payload) {
   if (!payload) {
     return;
   }
-  metricPremiumAvoided.textContent = formatNumber(
-    payload.premium_calls_avoided_vs_always_premium
-  );
-  metricTokensSaved.textContent = formatNumber(payload.estimated_tokens_saved?.total);
+  const avoided = payload.premium_calls_avoided_vs_always_premium || 0;
+  const total = payload.total_requests || 0;
+  const handled = payload.handled_requests || { local: avoided, tools: 0, premium: 0 };
+  metricPremiumAvoided.textContent = formatNumber(avoided);
+  metricTokensCompression.textContent = formatNumber(payload.estimated_tokens_saved?.compression);
+  metricTokensRouting.textContent = formatNumber(payload.estimated_tokens_saved?.routing);
   metricPremiumCalls.textContent = formatNumber(payload.premium_calls);
-
-  backendUsage.textContent = "";
-  for (const [backend, count] of Object.entries(payload.usage_by_backend || {})) {
-    const item = document.createElement("span");
-    item.className = "usage-pill";
-    item.textContent = `${backend}: ${count}`;
-    backendUsage.appendChild(item);
-  }
-
-  trend.textContent = "";
-  const maxRequests = Math.max(1, ...((payload.last_7_days || []).map((day) => day.requests)));
-  for (const day of payload.last_7_days || []) {
-    const bar = document.createElement("span");
-    bar.className = "trend-bar";
-    bar.style.height = `${Math.max(6, Math.round((day.requests / maxRequests) * 44))}px`;
-    bar.title = `${day.date}: ${day.requests} requests, ${day.premium_calls} premium`;
-    trend.appendChild(bar);
-  }
+  dashboardSubtitle.textContent = `${formatNumber(avoided)} of ${formatNumber(
+    total
+  )} requests handled locally or by tools this week.`;
+  dashboardEmpty.hidden = total !== 0;
+  renderStackedBar(handled, total);
+  renderTrend(payload.last_7_days || []);
+  renderFeedbackQuality(payload.feedback || {});
 }
 
 async function loadQuotaStatus() {
   try {
     const response = await fetch("/api/quota");
     if (response.ok) {
-      renderQuotaMeters(await response.json());
+      const payload = await response.json();
+      renderQuotaMeters(payload);
+      return payload;
     }
   } catch {
     if (quotaMeters) {
       quotaMeters.hidden = true;
     }
   }
+  return null;
+}
+
+async function loadDashboardQuota() {
+  renderDashboardQuota(await loadQuotaStatus());
 }
 
 async function loadDashboard() {
@@ -706,12 +839,30 @@ async function loadDashboard() {
 }
 
 function toggleDashboard() {
-  const nextHidden = !dashboard.hidden;
-  dashboard.hidden = nextHidden;
-  dashboardToggle.setAttribute("aria-expanded", String(!nextHidden));
-  if (!nextHidden) {
+  setDashboardOpen(dashboard.hidden);
+  if (!dashboard.hidden) {
     loadDashboard();
-    loadQuotaStatus();
+    loadDashboardQuota();
+  }
+}
+
+function setDashboardOpen(open, fromStack = false) {
+  if (!dashboard) {
+    return;
+  }
+  dashboard.hidden = !open;
+  if (dashboardScrim) {
+    dashboardScrim.hidden = !open;
+  }
+  dashboardToggle.setAttribute("aria-expanded", String(open));
+  document.body.classList.toggle("dashboard-open", open);
+  if (!dashboardOverlay || fromStack) {
+    return;
+  }
+  if (open) {
+    SB.dismissableStack.open(dashboardOverlay);
+  } else {
+    SB.dismissableStack.remove(dashboardOverlay);
   }
 }
 
@@ -830,6 +981,7 @@ async function sendMessage() {
     loadQuotaStatus();
     if (dashboard && !dashboard.hidden) {
       loadDashboard();
+      loadDashboardQuota();
     }
     input.focus();
   }
@@ -991,6 +1143,15 @@ modelMenuOverlay = SB.dismissableStack.register({
   close: () => setMenuOpenFromStack(false, true),
 });
 
+if (dashboard && dashboardToggle) {
+  dashboardOverlay = SB.dismissableStack.register({
+    id: "dashboard",
+    element: dashboard,
+    trigger: dashboardToggle,
+    close: () => setDashboardOpen(false, true),
+  });
+}
+
 if (privacyFloor && privacyFloorPopover) {
   privacyFloorOverlay = SB.dismissableStack.register({
     id: "privacy-floor",
@@ -1009,6 +1170,10 @@ if (privateChatToggle) {
 
 if (dashboardToggle) {
   dashboardToggle.addEventListener("click", toggleDashboard);
+}
+
+if (dashboardClose) {
+  dashboardClose.addEventListener("click", () => setDashboardOpen(false));
 }
 
 if (newChatButton) {

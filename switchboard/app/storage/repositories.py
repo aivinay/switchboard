@@ -355,8 +355,10 @@ class PersonalTelemetryRepository:
             for rating in {"bad", "too-expensive", "too-weak", "wrong-route"}
         )
         return {
+            "total": len(records),
             "positive": counts.get("good", 0),
             "negative": negative,
+            "bad": counts.get("bad", 0),
             "too_expensive": counts.get("too-expensive", 0),
             "too_weak": counts.get("too-weak", 0),
             "wrong_route": counts.get("wrong-route", 0),

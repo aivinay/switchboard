@@ -14,6 +14,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and `GET /api/feedback/pending`.
 - Added a persisted web-UI Private chat toggle, `PATCH /api/sessions/{session_id}`,
   and a remote mutation guard for session updates and feedback retraction.
+- Added the web-UI Savings drawer with quota framing, local/tool/premium request mix,
+  token-savings splits, 7-day trend segments, and feedback quality counts.
 
 ### Fixed
 - Replaced the stale source-checkout `__version__` fallback with
