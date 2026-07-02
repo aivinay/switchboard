@@ -9,6 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - Added `switchboard version`, global `switchboard --version`,
   `switchboard upgrade [--check]`, and the opt-out daily PyPI update check.
+- Added `GET /api/version` for cached UI update status.
 
 ### Fixed
 - Replaced the stale source-checkout `__version__` fallback with

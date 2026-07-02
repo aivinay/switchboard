@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from switchboard import __version__
 from switchboard.app.models.backends import SwitchboardResponse, backend_display_name
 from switchboard.app.models.personal import FeedbackCreate, FeedbackRead
 from switchboard.app.services.container import ServiceContainer
@@ -19,6 +20,7 @@ from switchboard.app.services.local_runtime import OllamaRuntimeService
 from switchboard.app.services.personal_switchboard import PersonalSwitchboardService
 from switchboard.app.services.quota import PREMIUM_BACKENDS, QuotaLedgerService
 from switchboard.app.services.switchboard_core import SwitchboardCoreService
+from switchboard.app.services.update_check import cached_version_status
 
 router = APIRouter(tags=["ui"])
 
@@ -461,6 +463,16 @@ def quota_status(request: Request) -> dict[str, object]:
         container.backend_metrics_repository,
         container.personal_config.quota,
     ).snapshot()
+
+
+@router.get("/api/version")
+def version_status() -> dict[str, object]:
+    status = cached_version_status(__version__)
+    return {
+        "installed": status.installed,
+        "latest": status.latest,
+        "update_available": status.update_available,
+    }
 
 
 VALID_CORRECTED_BACKENDS = ("ollama", "codex", "claude-code")
