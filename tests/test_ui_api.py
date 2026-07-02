@@ -8,13 +8,15 @@ from fastapi.testclient import TestClient
 
 from switchboard.app.backends.base import AgentAdapter
 from switchboard.app.backends.registry import BackendRegistry
+from switchboard.app.core.config import Settings
+from switchboard.app.main import create_app
 from switchboard.app.models.backends import (
     BackendCostType,
     BackendInfo,
     SwitchboardRequest,
     SwitchboardResponse,
 )
-from switchboard.app.models.telemetry import BackendMetricRecord
+from switchboard.app.models.telemetry import BackendMetricRecord, FeedbackRecord
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -153,6 +155,151 @@ def test_ui_auto_uses_router_and_forced_backend_bypasses_auto(
     assert forced_response.json()["backend"] == "ollama"
     assert len(fake_adapters["codex"].calls) == 1
     assert len(fake_adapters["ollama"].calls) == 1
+
+
+def test_ui_private_chat_forces_ollama_and_persists_session(
+    client: TestClient,
+    fake_adapters: dict[str, RecordingAdapter],
+) -> None:
+    response = client.post(
+        "/api/chat",
+        json={
+            "message": "Debug this repo and suggest a fix.",
+            "backend": "auto",
+            "private": True,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["backend"] == "ollama"
+    assert len(fake_adapters["ollama"].calls) == 1
+    assert len(fake_adapters["codex"].calls) == 0
+    session = client.app.state.container.context_store.get_session(body["session_id"])
+    assert session is not None
+    assert session.private is True
+    history = client.get(f"/api/chat/history?session_id={body['session_id']}")
+    assert history.status_code == 200
+    assert history.json()["private"] is True
+
+
+def test_ui_private_session_forces_ollama_when_client_cache_is_cleared(
+    client: TestClient,
+    fake_adapters: dict[str, RecordingAdapter],
+) -> None:
+    first = client.post(
+        "/api/chat",
+        json={"message": "Say OK only.", "backend": "auto", "private": True},
+    )
+    session_id = first.json()["session_id"]
+
+    second = client.post(
+        "/api/chat",
+        json={
+            "message": "Debug this repo and suggest a fix.",
+            "backend": "codex",
+            "session_id": session_id,
+            "private": False,
+        },
+    )
+
+    assert second.status_code == 200
+    assert second.json()["backend"] == "ollama"
+    assert len(fake_adapters["ollama"].calls) == 2
+    assert len(fake_adapters["codex"].calls) == 0
+
+
+def test_ui_private_chat_with_ollama_down_never_falls_through_to_premium(
+    client: TestClient,
+    fake_adapters: dict[str, RecordingAdapter],
+) -> None:
+    fake_adapters["ollama"].available = False
+
+    response = client.post(
+        "/api/chat",
+        json={
+            "message": "Debug this repo and suggest a fix.",
+            "backend": "auto",
+            "private": True,
+        },
+    )
+
+    assert response.status_code == 502
+    detail = response.json()["detail"]
+    assert detail["backend"] == "ollama"
+    assert "Ollama is not running" in detail["message"]
+    assert len(fake_adapters["codex"].calls) == 0
+
+
+def test_ui_remote_mutation_guard_blocks_non_loopback_session_patch(
+    test_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SWITCHBOARD_ALLOW_REMOTE_MUTATIONS", raising=False)
+    remote_client = TestClient(
+        create_app(test_settings),
+        client=("203.0.113.10", 50000),
+    )
+    session = remote_client.app.state.container.context_store.create_session()
+
+    response = remote_client.patch(
+        f"/api/sessions/{session.session_id}",
+        json={"private": True},
+    )
+
+    assert response.status_code == 403
+    assert "Remote UI mutations" in response.json()["detail"]["message"]
+
+
+def test_ui_remote_mutation_guard_allows_loopback_and_env_override(
+    test_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SWITCHBOARD_ALLOW_REMOTE_MUTATIONS", raising=False)
+    loopback_client = TestClient(
+        create_app(test_settings),
+        client=("127.0.0.1", 50000),
+    )
+    loopback_session = loopback_client.app.state.container.context_store.create_session()
+
+    loopback_response = loopback_client.patch(
+        f"/api/sessions/{loopback_session.session_id}",
+        json={"private": True},
+    )
+
+    assert loopback_response.status_code == 200
+    assert loopback_response.json()["private"] is True
+
+    monkeypatch.setenv("SWITCHBOARD_ALLOW_REMOTE_MUTATIONS", "1")
+    remote_client = TestClient(
+        create_app(test_settings),
+        client=("203.0.113.10", 50000),
+    )
+    remote_session = remote_client.app.state.container.context_store.create_session()
+
+    remote_response = remote_client.patch(
+        f"/api/sessions/{remote_session.session_id}",
+        json={"private": True},
+    )
+
+    assert remote_response.status_code == 200
+    assert remote_response.json()["private"] is True
+
+
+def test_ui_remote_mutation_guard_blocks_feedback_retraction(
+    test_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SWITCHBOARD_ALLOW_REMOTE_MUTATIONS", raising=False)
+    remote_client = TestClient(
+        create_app(test_settings),
+        client=("203.0.113.10", 50000),
+    )
+
+    response = remote_client.delete("/api/chat/feedback/request_123")
+
+    assert response.status_code == 403
+    assert "Remote UI mutations" in response.json()["detail"]["message"]
 
 
 def test_ui_chat_api_rejects_empty_prompt(client: TestClient) -> None:
@@ -339,6 +486,16 @@ def test_ui_dashboard_endpoint_uses_recorded_metrics(client: TestClient) -> None
             private_mode=True,
         )
     )
+    container.personal_telemetry_repository.add_feedback(
+        FeedbackRecord(request_id="req_dashboard_local", rating="good")
+    )
+    container.personal_telemetry_repository.add_feedback(
+        FeedbackRecord(
+            request_id="req_dashboard_premium",
+            rating="wrong-route",
+            preferred_model="ollama",
+        )
+    )
 
     response = client.get("/api/dashboard")
 
@@ -346,10 +503,19 @@ def test_ui_dashboard_endpoint_uses_recorded_metrics(client: TestClient) -> None
     body = response.json()
     assert body["premium_calls"] == 1
     assert body["premium_calls_avoided_vs_always_premium"] == 1
+    assert body["handled_requests"] == {"local": 1, "premium": 1, "tools": 0}
     assert body["estimated_tokens_saved"]["compression"] == 34
     assert body["estimated_tokens_saved"]["routing"] == 10
     assert body["usage_by_backend"] == {"codex": 1, "ollama": 1}
+    assert body["feedback"] == {
+        "total": 2,
+        "good": 1,
+        "bad": 0,
+        "corrected": 1,
+        "pending_corrections": 0,
+    }
     assert len(body["last_7_days"]) == 7
+    assert {"local_calls", "tool_calls", "premium_calls"} <= set(body["last_7_days"][-1])
 
 
 def test_ui_time_question_uses_tool_grounding_with_selected_model(
@@ -539,9 +705,13 @@ def test_ui_chat_stream_rejects_empty_and_invalid_requests(client: TestClient) -
 def test_ui_static_files_exist_and_call_chat_api(client: TestClient) -> None:
     static_dir = ROOT / "switchboard" / "app" / "static"
     index = static_dir / "index.html"
+    state_js = static_dir / "state.js"
+    overlays_js = static_dir / "overlays.js"
     app_js = static_dir / "app.js"
 
     assert index.exists()
+    assert state_js.exists()
+    assert overlays_js.exists()
     assert app_js.exists()
 
     html = index.read_text(encoding="utf-8")
@@ -550,18 +720,51 @@ def test_ui_static_files_exist_and_call_chat_api(client: TestClient) -> None:
     assert "Personal AI Switchboard" not in html
     assert "personal_ai_switchboard" not in html
     assert 'id="model-menu"' in html
+    assert 'id="model-lock-note"' in html
     assert 'id="dashboard-toggle"' in html
+    assert 'id="dashboard-scrim"' in html
+    assert 'id="dashboard-close"' in html
+    assert 'class="dashboard-drawer"' in html
+    assert html.index("</main>") < html.index('id="dashboard"')
     assert 'id="quota-meters"' in html
-    assert 'id="private-mode"' in html
+    assert 'id="drawer-quota-meters"' in html
+    assert 'id="metric-tokens-compression"' in html
+    assert 'id="metric-tokens-routing"' in html
+    assert 'id="feedback-quality"' in html
+    assert 'id="privacy-floor"' in html
+    assert 'id="privacy-floor-popover"' in html
+    assert 'id="private-chat-toggle"' in html
+    assert "Privacy floor: always on" in html
+    assert "Private chat" in html
     assert "Backend" not in html
     assert "Ask Switchboard..." in html
     assert html.index('id="model-picker-button"') < html.index("<h1>Switchboard</h1>")
     assert 'aria-label="Send message"' in html
     assert "<button id=\"send\"" in html
     assert ">Send<" not in html
+    assert html.index("/ui/static/state.js") < html.index("/ui/static/overlays.js")
+    assert html.index("/ui/static/overlays.js") < html.index("/ui/static/app.js")
+
+    state = state_js.read_text(encoding="utf-8")
+    assert "window.SB" in state
+    assert "switchboard.session_id" in state
+    assert "switchboard.private_chat" in state
+    assert "openOverlayStack" in state
+    assert "switchboard.feedback.enable_nudge_seen" in state
+
+    overlays = overlays_js.read_text(encoding="utf-8")
+    assert "SB.dismissableStack" in overlays
+    assert 'event.key === "Escape"' in overlays
+    assert "closeTop" in overlays
 
     javascript = app_js.read_text(encoding="utf-8")
+    assert "window.SB" in javascript
+    assert "SB.dismissableStack.register" in javascript
     assert "/api/chat/stream" in javascript
+    assert "/api/sessions/" in javascript
+    assert "PATCH" in javascript
+    assert "private: privateChat" in javascript
+    assert "Private chat forces Local" in html
     assert "Thinking..." in javascript
     assert "display_model" in javascript
     assert "streamAssistantResponse" in javascript
@@ -575,7 +778,11 @@ def test_ui_static_files_exist_and_call_chat_api(client: TestClient) -> None:
     assert "/api/backends/status" in javascript
     assert "/api/dashboard" in javascript
     assert "/api/quota" in javascript
-    assert "switchboard.session_id" in javascript
+    assert "renderStackedBar" in javascript
+    assert "renderDashboardQuota" in javascript
+    assert "setDashboardOpen" in javascript
+    assert "dashboardOverlay" in javascript
+    assert "feedback.pending_corrections" in javascript
     assert "rememberSession" in javascript
     assert "session_id: sessionId" in javascript
     assert "updateSendState" in javascript
@@ -585,7 +792,13 @@ def test_ui_static_files_exist_and_call_chat_api(client: TestClient) -> None:
     # Internal backend ids appear only as API payload values (feedback
     # correction buttons); visible labels remain friendly names.
     assert '["Claude", "claude-code"]' in javascript
-    assert "feedback-followup" in javascript
+    assert "feedback-popover" in javascript
+    assert 'method: "DELETE"' in javascript
+    assert 'rating: "bad"' in javascript
+    assert "corrected_backend" in javascript
+    assert "nudge_enable_examples" in javascript
+    assert "window.confirm" in javascript
+    assert "private_chat" in javascript
     page = client.get("/ui")
     assert page.status_code == 200
     assert "Switchboard" in page.text
@@ -623,5 +836,9 @@ def test_ui_layout_keeps_composer_stable() -> None:
     assert ".composer-footer {" in css
     assert "border-radius: 999px;" in css
     assert "grid-template-columns: 1fr auto 1fr;" in css
+    assert ".dashboard-drawer {" in css
+    assert "position: fixed;" in css
+    assert ".dashboard-scrim" in css
+    assert ".stacked-bar" in css
     assert "top: calc(100% + 8px);" in css
     assert "margin-top: 8px;" in css

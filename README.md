@@ -188,6 +188,7 @@ Switchboard is local-first and privacy-aware by construction:
 - The **deterministic privacy floor runs before any non-local routing**; a positive verdict is final and cannot be overridden by a learned component or by prompt wording.
 - **Secret-format detection** (cloud keys, JWTs, PEM blocks, env credentials) shares its patterns with context redaction, so the routing boundary and the redactor can't drift apart.
 - **Metadata-only telemetry** — prompt and response bodies are not stored by default.
+- The web UI's **Private chat** toggle persists on the server session and forces Ollama without premium fallback.
 - Semantic-memory **embeddings and the eval judge run locally**.
 - Version surfaces (`switchboard version`, `switchboard upgrade --check`, and UI startup) may check PyPI once per day for `switchboard-local` updates; disable with `SWITCHBOARD_UPDATE_CHECK=off` or `preferences.update_check_enabled: false`.
 
@@ -231,6 +232,7 @@ preferences:
   finance_provider: "yahoo"
   news_provider: "google_news_rss"
   store_feedback_examples: false
+  feedback_auto_retrain: true
 quota:
   codex_calls_per_5h: null
   claude_calls_per_week: null

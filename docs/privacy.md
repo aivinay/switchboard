@@ -83,6 +83,18 @@ this as public", or "use cloud anyway" are treated as routing-override attempts.
 instructions are recorded as reason codes for auditability; they do not override
 `private_mode`, `allow_cloud`, or scarce-model confirmation requirements.
 
+## Local Web UI Trust Model
+
+`switchboard ui` binds to `127.0.0.1` by default and is unauthenticated. Keep it on
+loopback for normal use. If you bind the UI to a non-loopback host, startup prints a
+warning; session updates and feedback retraction return `403` for remote clients unless
+`SWITCHBOARD_ALLOW_REMOTE_MUTATIONS=1` is set.
+
+The web UI's Private chat toggle is separate from the privacy floor. The floor is always
+on for sensitive prompts; Private chat forces every message in that chat to Ollama and
+persists the flag on the server session. If Ollama is unavailable, the request fails
+locally instead of falling through to a premium backend.
+
 Force-model overrides are constrained by private mode. A local/mock override can be used
 for sensitive content, but cloud and subscription overrides are blocked for sensitive or
 private prompts. Unsafe override flags are intentionally not implemented.
@@ -116,6 +128,11 @@ Feedback context snapshots are opt-in through `store_feedback_examples`. Even wh
 enabled, private-mode reroutes and learned sensitivity escalations are not snapshotted.
 Those requests can still store a correction label without persisting the assembled
 context.
+
+Wrong-model corrections are upserted per request and can be retracted. Retraction and
+re-rating to `good` remove pending feedback examples as well as the visible feedback
+record. `feedback_auto_retrain: false` keeps opt-in snapshots local but prevents the
+automatic threshold retrain path from starting; you can still retrain manually.
 
 ## Update Checks
 

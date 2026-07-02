@@ -9,6 +9,10 @@ switchboard savings --days 7
 switchboard loaded-models
 ```
 
+The web UI's Savings drawer uses the same local metrics plus `/api/dashboard` and
+`/api/quota`; it shows request counts, token-savings estimates, declared soft-budget
+windows, and feedback counts without dollar figures.
+
 ## Route And Ask
 
 `switchboard route` previews the backend decision without calling a model:
@@ -24,6 +28,12 @@ tool grounding when configured, but it does not call Ollama, Codex, or Claude Co
 Bare `switchboard ask` uses the same stateful core path as `switchboard ask --backend auto`.
 That path carries context across Ollama, Codex, Claude Code, and tools. The web UI uses
 it automatically:
+
+In the web UI, Private chat forces Ollama for every message in the current session and
+persists that flag server-side. Turning it off confirms that earlier messages in the
+chat may be included as context for premium backends from then on. The UI is
+unauthenticated; keep `switchboard ui` on loopback unless you intentionally allow remote
+access.
 
 ```bash
 switchboard ask "Summarise this customer email in three bullets."
@@ -139,6 +149,13 @@ Feedback: previous feedback considered
 
 Manual premium preferences remain recommendation-only; Switchboard will not call Claude,
 ChatGPT, or Codex web sessions because of feedback.
+
+In the web UI, thumbs-up and thumbs-down are mutually exclusive and reversible. A
+"wrong model" correction is stored as the corrected backend, counts once per request,
+and can be retracted; retracting or changing the rating to "good" removes any pending
+wrong-model training example. `GET /api/feedback/pending` reports the count of
+unprocessed wrong-model corrections. Set `feedback_auto_retrain: false` to keep those
+corrections pending until you run `switchboard train-router` yourself.
 
 Usage and savings reports show counts for:
 

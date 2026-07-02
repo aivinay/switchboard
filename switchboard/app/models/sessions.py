@@ -13,6 +13,7 @@ class ChatSessionRecord(SQLModel, table=True):
     session_id: str = SQLField(primary_key=True)
     title: str | None = None
     summary: str | None = None
+    private: bool = SQLField(default=False, index=True)
     created_at: datetime = SQLField(default_factory=utc_now, index=True)
     updated_at: datetime = SQLField(default_factory=utc_now, index=True)
 
@@ -34,6 +35,7 @@ class ChatSessionRead(BaseModel):
     session_id: str
     title: str | None = None
     summary: str | None = None
+    private: bool = False
     created_at: datetime
     updated_at: datetime
 

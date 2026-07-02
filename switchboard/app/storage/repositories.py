@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -18,6 +19,7 @@ from switchboard.app.models.sessions import (
 from switchboard.app.models.telemetry import (
     BackendMetricRead,
     BackendMetricRecord,
+    FeedbackExampleRecord,
     FeedbackRecord,
     MemoryItem,
     PersonalTelemetryRead,
@@ -136,6 +138,7 @@ def chat_session_to_read(record: ChatSessionRecord) -> ChatSessionRead:
         session_id=record.session_id,
         title=record.title,
         summary=record.summary,
+        private=record.private,
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
@@ -352,8 +355,10 @@ class PersonalTelemetryRepository:
             for rating in {"bad", "too-expensive", "too-weak", "wrong-route"}
         )
         return {
+            "total": len(records),
             "positive": counts.get("good", 0),
             "negative": negative,
+            "bad": counts.get("bad", 0),
             "too_expensive": counts.get("too-expensive", 0),
             "too_weak": counts.get("too-weak", 0),
             "wrong_route": counts.get("wrong-route", 0),
@@ -436,7 +441,24 @@ class PersonalTelemetryRepository:
 
     def add_feedback(self, record: FeedbackRecord) -> FeedbackRead:
         with Session(self.engine) as session:
-            session.add(record)
+            existing_records = session.exec(
+                select(FeedbackRecord)
+                .where(FeedbackRecord.request_id == record.request_id)
+                .order_by(col(FeedbackRecord.created_at), col(FeedbackRecord.id))
+            ).all()
+            existing = existing_records[0] if existing_records else None
+            if existing is None:
+                stored = record
+                session.add(stored)
+            else:
+                stored = existing
+                stored.rating = record.rating
+                stored.note = record.note
+                stored.preferred_model = record.preferred_model
+                stored.created_at = record.created_at
+                session.add(stored)
+                for duplicate in existing_records[1:]:
+                    session.delete(duplicate)
             route = session.exec(
                 select(PersonalTelemetryRecord).where(
                     PersonalTelemetryRecord.request_id == record.request_id
@@ -446,14 +468,64 @@ class PersonalTelemetryRepository:
                 route.feedback_rating = record.rating
                 session.add(route)
             session.commit()
-            session.refresh(record)
+            session.refresh(stored)
             return FeedbackRead(
+                request_id=stored.request_id,
+                rating=stored.rating,
+                note=stored.note,
+                preferred_model=stored.preferred_model,
+                created_at=stored.created_at.isoformat(),
+            )
+
+    def delete_feedback(self, request_id: str) -> bool:
+        deleted = False
+        with Session(self.engine) as session:
+            records = session.exec(
+                select(FeedbackRecord).where(FeedbackRecord.request_id == request_id)
+            ).all()
+            for record in records:
+                session.delete(record)
+                deleted = True
+            examples = session.exec(
+                select(FeedbackExampleRecord).where(
+                    FeedbackExampleRecord.request_id == request_id
+                )
+            ).all()
+            for example in examples:
+                session.delete(example)
+                deleted = True
+            route = session.exec(
+                select(PersonalTelemetryRecord).where(
+                    PersonalTelemetryRecord.request_id == request_id
+                )
+            ).first()
+            if route is not None:
+                route.feedback_rating = None
+                session.add(route)
+            session.commit()
+        return deleted
+
+    def feedback_by_request_ids(self, request_ids: Sequence[str]) -> dict[str, FeedbackRead]:
+        if not request_ids:
+            return {}
+        with Session(self.engine) as session:
+            records = session.exec(
+                select(FeedbackRecord)
+                .where(col(FeedbackRecord.request_id).in_(request_ids))
+                .order_by(desc(FeedbackRecord.created_at), desc(FeedbackRecord.id))
+            ).all()
+        by_request: dict[str, FeedbackRead] = {}
+        for record in records:
+            if record.request_id in by_request:
+                continue
+            by_request[record.request_id] = FeedbackRead(
                 request_id=record.request_id,
                 rating=record.rating,
                 note=record.note,
                 preferred_model=record.preferred_model,
                 created_at=record.created_at.isoformat(),
             )
+        return by_request
 
 
 @dataclass
@@ -576,6 +648,7 @@ class ContextStore:
         *,
         session_id: str | None = None,
         title: str | None = None,
+        private: bool = False,
     ) -> ChatSessionRead:
         with Session(self.engine) as session:
             existing = None
@@ -586,6 +659,7 @@ class ContextStore:
             record = ChatSessionRecord(
                 session_id=session_id or new_request_id("session"),
                 title=title,
+                private=private,
             )
             session.add(record)
             session.commit()
@@ -596,6 +670,27 @@ class ContextStore:
         with Session(self.engine) as session:
             record = session.get(ChatSessionRecord, session_id)
             return chat_session_to_read(record) if record else None
+
+    def update_session(
+        self,
+        session_id: str,
+        *,
+        title: str | None = None,
+        private: bool | None = None,
+    ) -> ChatSessionRead | None:
+        with Session(self.engine) as session:
+            record = session.get(ChatSessionRecord, session_id)
+            if record is None:
+                return None
+            if title is not None:
+                record.title = title
+            if private is not None:
+                record.private = private
+            record.updated_at = utc_now()
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return chat_session_to_read(record)
 
     def append_message(
         self,

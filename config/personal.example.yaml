@@ -64,6 +64,7 @@ preferences:
   # Closed feedback loop: opt in to storing thumbs-down (context, response)
   # snapshots locally and auto-retraining after enough "wrong model" corrections.
   store_feedback_examples: false
+  feedback_auto_retrain: true
   feedback_retrain_threshold: 5
 
 budgets:

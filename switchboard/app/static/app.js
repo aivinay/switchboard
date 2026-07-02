@@ -1,3 +1,5 @@
+const SB = (window.SB = window.SB || {});
+const appState = SB.state;
 const form = document.querySelector("#chat-form");
 const input = document.querySelector("#message");
 const send = document.querySelector("#send");
@@ -8,14 +10,26 @@ const modelMenu = document.querySelector("#model-menu");
 const quotaMeters = document.querySelector("#quota-meters");
 const dashboard = document.querySelector("#dashboard");
 const dashboardToggle = document.querySelector("#dashboard-toggle");
-const privateMode = document.querySelector("#private-mode");
+const dashboardClose = document.querySelector("#dashboard-close");
+const dashboardScrim = document.querySelector("#dashboard-scrim");
+const dashboardSubtitle = document.querySelector("#dashboard-subtitle");
+const dashboardStack = document.querySelector("#dashboard-stack");
+const dashboardEmpty = document.querySelector("#dashboard-empty");
+const drawerQuotaMeters = document.querySelector("#drawer-quota-meters");
+const quotaTeaser = document.querySelector("#quota-teaser");
+const privacyFloor = document.querySelector("#privacy-floor");
+const privacyFloorPopover = document.querySelector("#privacy-floor-popover");
+const privateChatToggle = document.querySelector("#private-chat-toggle");
+const modelLockNote = document.querySelector("#model-lock-note");
 const newChatButton = document.querySelector("#new-chat");
 const metricPremiumAvoided = document.querySelector("#metric-premium-avoided");
-const metricTokensSaved = document.querySelector("#metric-tokens-saved");
+const metricTokensCompression = document.querySelector("#metric-tokens-compression");
+const metricTokensRouting = document.querySelector("#metric-tokens-routing");
 const metricPremiumCalls = document.querySelector("#metric-premium-calls");
+const feedbackQuality = document.querySelector("#feedback-quality");
 const backendUsage = document.querySelector("#backend-usage");
 const trend = document.querySelector("#trend");
-const sessionStorageKey = "switchboard.session_id";
+const sessionStorageKey = SB.storageKeys.sessionId;
 
 const fallbackModelOptions = [
   { value: "auto", label: "Auto", description: "Routes automatically", available: true },
@@ -24,11 +38,16 @@ const fallbackModelOptions = [
   { value: "ollama", label: "Ollama", description: "Runs locally", available: false },
 ];
 
-let currentModel = "auto";
-let isSending = false;
-let sessionId = window.localStorage.getItem(sessionStorageKey) || null;
+let currentModel = appState.currentModel;
+let isSending = appState.composer.isSending;
+let sessionId = appState.sessionId;
 let modelLabels = { auto: "Auto" };
 let modelOptions = [];
+let modelMenuOverlay = null;
+let privacyFloorOverlay = null;
+let dashboardOverlay = null;
+let modelBeforePrivate = currentModel === "ollama" ? "auto" : currentModel;
+let privateOffConfirmed = false;
 
 /* ------------------------------------------------------------------ */
 /* Minimal safe markdown renderer (local-first: no CDN dependencies). */
@@ -157,8 +176,13 @@ function rememberSession(nextSessionId) {
   if (!nextSessionId) {
     return;
   }
+  const changed = sessionId !== nextSessionId;
   sessionId = nextSessionId;
+  appState.sessionId = nextSessionId;
   window.localStorage.setItem(sessionStorageKey, nextSessionId);
+  if (changed && appState.composer.privateChat) {
+    persistPrivateChat(true);
+  }
 }
 
 function scrollToBottom() {
@@ -209,7 +233,7 @@ function appendRoutingChips(meta, displayModel, routing) {
   if (routing.route_type) {
     chips.appendChild(makeChip(routing.route_type, "route"));
   }
-  if (routing.privacy_floor) {
+  if (routing.private_chat || routing.privacy_floor) {
     chips.appendChild(makeChip("Lock", "privacy"));
   }
   if (routing.tool_grounded) {
@@ -274,12 +298,26 @@ function makeMetaRow(item, displayModel, routing) {
   }
 
   if (routing && routing.request_id) {
-    meta.appendChild(makeFeedbackControls(routing.request_id));
+    meta.appendChild(
+      makeFeedbackControls(routing.request_id, {
+        answeredBackend: routing.backend,
+        rating: routing.feedback_rating,
+        correctedBackend: routing.corrected_backend,
+      })
+    );
   }
   return meta;
 }
 
-function makeFeedbackControls(requestId) {
+function backendLabel(backend) {
+  return {
+    ollama: "Ollama",
+    codex: "Codex",
+    "claude-code": "Claude",
+  }[backend] || backend;
+}
+
+function makeFeedbackControls(requestId, initial = {}) {
   const group = document.createElement("span");
   group.className = "feedback-group";
   const up = document.createElement("button");
@@ -287,16 +325,86 @@ function makeFeedbackControls(requestId) {
   up.className = "feedback-button";
   up.textContent = "\u{1F44D}";
   up.title = "Good answer";
+  up.setAttribute("aria-pressed", "false");
   const down = document.createElement("button");
   down.type = "button";
   down.className = "feedback-button";
   down.textContent = "\u{1F44E}";
   down.title = "Something was wrong";
-  const followup = document.createElement("span");
-  followup.className = "feedback-followup";
-  followup.hidden = true;
+  down.setAttribute("aria-pressed", "false");
+  const popover = document.createElement("span");
+  popover.className = "feedback-popover";
+  popover.hidden = true;
+  const status = document.createElement("span");
+  status.className = "feedback-status";
+  status.setAttribute("aria-live", "polite");
 
-  async function sendFeedback(payload, active) {
+  let rating = initial.rating || null;
+  let correctedBackend = initial.correctedBackend || null;
+  let draftDown = false;
+  let overlay = null;
+
+  function setPressed() {
+    const downActive = draftDown || rating === "bad" || rating === "wrong-route";
+    up.classList.toggle("active", rating === "good");
+    down.classList.toggle("active", downActive);
+    up.setAttribute("aria-pressed", String(rating === "good"));
+    down.setAttribute("aria-pressed", String(downActive));
+  }
+
+  function closePopover(fromStack = false) {
+    popover.hidden = true;
+    draftDown = false;
+    setPressed();
+    if (overlay && !fromStack) {
+      SB.dismissableStack.remove(overlay);
+    }
+  }
+
+  function renderStoredStatus() {
+    status.textContent = "";
+    if (rating === "wrong-route" && correctedBackend) {
+      status.textContent = `wrong model \u2192 ${backendLabel(correctedBackend)} \u2713`;
+    } else if (rating === "bad") {
+      status.textContent = "bad answer \u2713";
+    } else if (rating === "good") {
+      status.textContent = "good \u2713";
+    }
+  }
+
+  function showAck(payload) {
+    status.textContent = "";
+    const message = document.createElement("span");
+    if (payload.nudge_enable_examples) {
+      if (appState.feedback.enableNudgeShown) {
+        message.textContent = "Saved.";
+      } else {
+        appState.feedback.enableNudgeShown = true;
+        window.sessionStorage.setItem(SB.storageKeys.feedbackNudgeSeen, "1");
+        message.textContent = payload.ack_message || "Saved.";
+      }
+    } else {
+      message.textContent = payload.ack_message || "Saved.";
+    }
+    status.appendChild(message);
+    if (payload.copy_command) {
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "copy-button feedback-copy";
+      copy.textContent = "Copy";
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(payload.copy_command);
+          copy.textContent = "Copied";
+        } catch {
+          copy.textContent = "Failed";
+        }
+      });
+      status.appendChild(copy);
+    }
+  }
+
+  async function sendFeedback(payload) {
     try {
       const response = await fetch("/api/chat/feedback", {
         method: "POST",
@@ -304,64 +412,112 @@ function makeFeedbackControls(requestId) {
         body: JSON.stringify({ request_id: requestId, ...payload }),
       });
       if (response.ok) {
-        up.classList.toggle("active", active === up);
-        down.classList.toggle("active", active === down);
+        const result = await response.json();
+        rating = result.rating;
+        correctedBackend = result.preferred_model || null;
+        draftDown = false;
+        closePopover();
+        setPressed();
+        showAck(result);
       }
     } catch {
       /* feedback is best-effort */
     }
   }
 
-  function followupButton(label, payload) {
+  async function retractFeedback() {
+    try {
+      const response = await fetch(`/api/chat/feedback/${encodeURIComponent(requestId)}`, {
+        method: "DELETE",
+      });
+      if (response.ok) {
+        rating = null;
+        correctedBackend = null;
+        draftDown = false;
+        closePopover();
+        setPressed();
+        status.textContent = "retracted \u2713";
+      }
+    } catch {
+      /* feedback is best-effort */
+    }
+  }
+
+  function popoverButton(label, payload) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "followup-button";
     button.textContent = label;
     button.addEventListener("click", () => {
-      sendFeedback(payload, down);
-      followup.replaceChildren();
-      const ack = document.createElement("span");
-      ack.className = "followup-ack";
-      ack.textContent = "noted \u2713";
-      followup.appendChild(ack);
-      setTimeout(() => (followup.hidden = true), 1600);
+      sendFeedback(payload);
     });
     return button;
   }
 
-  function showFollowup() {
-    followup.replaceChildren();
-    followup.hidden = false;
-    followup.appendChild(
-      followupButton("Bad answer", { rating: "too-weak", detail: "bad_answer" })
-    );
+  function showPopover() {
+    popover.replaceChildren();
+    draftDown = true;
+    setPressed();
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "feedback-close";
+    close.textContent = "\u00d7";
+    close.title = "Close feedback options";
+    close.addEventListener("click", () => closePopover());
+    popover.appendChild(close);
+    popover.appendChild(popoverButton("Bad answer", { rating: "bad", detail: "bad_answer" }));
     const label = document.createElement("span");
     label.className = "followup-label";
     label.textContent = "wrong model \u2192";
-    followup.appendChild(label);
+    popover.appendChild(label);
     for (const [name, backend] of [
       ["Ollama", "ollama"],
       ["Codex", "codex"],
       ["Claude", "claude-code"],
     ]) {
-      followup.appendChild(
-        followupButton(name, {
+      if (backend === initial.answeredBackend) {
+        continue;
+      }
+      popover.appendChild(
+        popoverButton(name, {
           rating: "wrong-route",
           detail: "wrong_model",
           corrected_backend: backend,
         })
       );
     }
+    popover.hidden = false;
+    if (!overlay) {
+      overlay = SB.dismissableStack.register({
+        id: `feedback-${requestId}`,
+        element: popover,
+        trigger: down,
+        close: () => closePopover(true),
+      });
+    }
+    SB.dismissableStack.open(overlay);
   }
 
   up.addEventListener("click", () => {
-    followup.hidden = true;
-    sendFeedback({ rating: "good" }, up);
+    if (rating === "good") {
+      retractFeedback();
+      return;
+    }
+    sendFeedback({ rating: "good" });
   });
-  down.addEventListener("click", showFollowup);
+  down.addEventListener("click", () => {
+    if (!popover.hidden || rating === "bad" || rating === "wrong-route") {
+      retractFeedback();
+      return;
+    }
+    showPopover();
+  });
+  setPressed();
+  renderStoredStatus();
   group.appendChild(up);
   group.appendChild(down);
-  group.appendChild(followup);
+  group.appendChild(popover);
+  group.appendChild(status);
   return group;
 }
 
@@ -381,6 +537,7 @@ async function loadHistory() {
       return;
     }
     const payload = await response.json();
+    applyPrivateChatState(Boolean(payload.private));
     for (const message of payload.messages || []) {
       if (message.role === "user") {
         addMessage(message.content, "user");
@@ -389,7 +546,13 @@ async function loadHistory() {
           markdown: message.content,
           displayModel: message.display_model,
           routing: message.request_id
-            ? { request_id: message.request_id, ...(message.routing || {}) }
+            ? {
+                request_id: message.request_id,
+                backend: message.backend,
+                feedback_rating: message.feedback_rating,
+                corrected_backend: message.corrected_backend,
+                ...(message.routing || {}),
+              }
             : null,
         });
       }
@@ -399,8 +562,61 @@ async function loadHistory() {
   }
 }
 
+function cachePrivateChat(enabled) {
+  if (enabled) {
+    window.localStorage.setItem(SB.storageKeys.privateChat, "1");
+  } else {
+    window.localStorage.removeItem(SB.storageKeys.privateChat);
+  }
+}
+
+async function persistPrivateChat(enabled) {
+  if (!sessionId) {
+    return;
+  }
+  try {
+    await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ private: enabled }),
+    });
+  } catch {
+    /* Private-chat persistence is retried after the next successful send. */
+  }
+}
+
+function applyPrivateChatState(enabled, options = {}) {
+  const shouldPersist = options.persist || false;
+  const restoreModel = options.restoreModel || false;
+  appState.composer.privateChat = enabled;
+  cachePrivateChat(enabled);
+  if (privateChatToggle) {
+    privateChatToggle.setAttribute("aria-pressed", String(enabled));
+  }
+  form.classList.toggle("private-chat-on", enabled);
+  modelButton.classList.toggle("locked", enabled);
+  modelButton.setAttribute("aria-disabled", String(enabled));
+  if (modelLockNote) {
+    modelLockNote.hidden = !enabled;
+  }
+  if (enabled) {
+    if (currentModel !== "ollama") {
+      modelBeforePrivate = currentModel;
+    }
+    chooseModel("ollama");
+  } else if (restoreModel) {
+    chooseModel(modelBeforePrivate || "auto");
+  }
+  if (shouldPersist) {
+    persistPrivateChat(enabled);
+  }
+}
+
 function startNewChat() {
   sessionId = null;
+  appState.sessionId = null;
+  privateOffConfirmed = false;
+  applyPrivateChatState(false, { restoreModel: true });
   window.localStorage.removeItem(sessionStorageKey);
   messages.textContent = "";
   input.focus();
@@ -446,46 +662,169 @@ function renderQuotaMeters(payload) {
   quotaMeters.hidden = quotaMeters.children.length === 0;
 }
 
+function quotaFillClass(window) {
+  if (window.constrained) {
+    return "constrained";
+  }
+  if (!window.budget) {
+    return "";
+  }
+  const ratio = window.used / window.budget;
+  if (ratio >= 0.75) {
+    return "warning";
+  }
+  return "";
+}
+
+function renderDashboardQuota(payload) {
+  if (!drawerQuotaMeters || !quotaTeaser) {
+    return;
+  }
+  drawerQuotaMeters.textContent = "";
+  if (!payload || !payload.enabled) {
+    quotaTeaser.hidden = false;
+    return;
+  }
+  quotaTeaser.hidden = true;
+  for (const backend of ["codex", "claude-code"]) {
+    const window = payload.windows?.[backend];
+    if (!window || window.budget === null || window.budget === undefined) {
+      continue;
+    }
+    const meter = document.createElement("div");
+    meter.className = "drawer-quota-meter";
+    const header = document.createElement("div");
+    const label = document.createElement("span");
+    label.textContent = window.label;
+    const value = document.createElement("strong");
+    value.textContent = `${window.used}/${window.budget}`;
+    header.appendChild(label);
+    header.appendChild(value);
+    const bar = document.createElement("span");
+    bar.className = "quota-bar drawer-quota-bar";
+    const fill = document.createElement("span");
+    fill.style.width = `${Math.min(100, Math.round((window.used / window.budget) * 100))}%`;
+    const tone = quotaFillClass(window);
+    if (tone) {
+      fill.classList.add(tone);
+    }
+    bar.appendChild(fill);
+    meter.appendChild(header);
+    meter.appendChild(bar);
+    drawerQuotaMeters.appendChild(meter);
+  }
+  quotaTeaser.hidden = drawerQuotaMeters.children.length !== 0;
+}
+
+function renderStackedBar(handled, total) {
+  if (!dashboardStack) {
+    return;
+  }
+  dashboardStack.textContent = "";
+  const segments = [
+    ["local", handled.local || 0],
+    ["tools", handled.tools || 0],
+    ["premium", handled.premium || 0],
+  ];
+  const denominator = Math.max(1, total || segments.reduce((sum, item) => sum + item[1], 0));
+  for (const [name, count] of segments) {
+    const segment = document.createElement("span");
+    segment.className = `stacked-segment ${name}`;
+    segment.style.width = `${Math.round((count / denominator) * 100)}%`;
+    segment.title = `${name}: ${count}`;
+    dashboardStack.appendChild(segment);
+  }
+}
+
+function renderTrend(days) {
+  trend.textContent = "";
+  const maxRequests = Math.max(1, ...((days || []).map((day) => day.requests)));
+  for (const day of days || []) {
+    const item = document.createElement("div");
+    item.className = "trend-day";
+    const bar = document.createElement("span");
+    bar.className = "trend-bar";
+    bar.style.height = `${Math.max(8, Math.round((day.requests / maxRequests) * 58))}px`;
+    bar.title = `${day.date}: ${day.requests} requests, ${day.premium_calls} premium`;
+    if (!day.requests) {
+      bar.classList.add("empty");
+    } else {
+      const local = document.createElement("span");
+      local.className = "trend-segment local";
+      const tools = document.createElement("span");
+      tools.className = "trend-segment tools";
+      const premium = document.createElement("span");
+      premium.className = "trend-segment premium";
+      local.style.flexGrow = String(day.local_calls || 0);
+      tools.style.flexGrow = String(day.tool_calls || 0);
+      premium.style.flexGrow = String(day.premium_calls || 0);
+      bar.appendChild(premium);
+      bar.appendChild(tools);
+      bar.appendChild(local);
+    }
+    const label = document.createElement("span");
+    label.className = "trend-label";
+    label.textContent = day.date.slice(5);
+    item.appendChild(bar);
+    item.appendChild(label);
+    trend.appendChild(item);
+  }
+}
+
+function renderFeedbackQuality(feedback) {
+  if (!feedbackQuality) {
+    return;
+  }
+  const total = feedback?.total || 0;
+  if (!total) {
+    feedbackQuality.textContent = "No ratings yet.";
+    return;
+  }
+  feedbackQuality.textContent = `You rated ${formatNumber(total)} answers — ${formatNumber(
+    feedback.good
+  )} good, ${formatNumber(feedback.corrected)} corrected · ${formatNumber(
+    feedback.pending_corrections
+  )} corrections pending`;
+}
+
 function renderDashboard(payload) {
   if (!payload) {
     return;
   }
-  metricPremiumAvoided.textContent = formatNumber(
-    payload.premium_calls_avoided_vs_always_premium
-  );
-  metricTokensSaved.textContent = formatNumber(payload.estimated_tokens_saved?.total);
+  const avoided = payload.premium_calls_avoided_vs_always_premium || 0;
+  const total = payload.total_requests || 0;
+  const handled = payload.handled_requests || { local: avoided, tools: 0, premium: 0 };
+  metricPremiumAvoided.textContent = formatNumber(avoided);
+  metricTokensCompression.textContent = formatNumber(payload.estimated_tokens_saved?.compression);
+  metricTokensRouting.textContent = formatNumber(payload.estimated_tokens_saved?.routing);
   metricPremiumCalls.textContent = formatNumber(payload.premium_calls);
-
-  backendUsage.textContent = "";
-  for (const [backend, count] of Object.entries(payload.usage_by_backend || {})) {
-    const item = document.createElement("span");
-    item.className = "usage-pill";
-    item.textContent = `${backend}: ${count}`;
-    backendUsage.appendChild(item);
-  }
-
-  trend.textContent = "";
-  const maxRequests = Math.max(1, ...((payload.last_7_days || []).map((day) => day.requests)));
-  for (const day of payload.last_7_days || []) {
-    const bar = document.createElement("span");
-    bar.className = "trend-bar";
-    bar.style.height = `${Math.max(6, Math.round((day.requests / maxRequests) * 44))}px`;
-    bar.title = `${day.date}: ${day.requests} requests, ${day.premium_calls} premium`;
-    trend.appendChild(bar);
-  }
+  dashboardSubtitle.textContent = `${formatNumber(avoided)} of ${formatNumber(
+    total
+  )} requests handled locally or by tools this week.`;
+  dashboardEmpty.hidden = total !== 0;
+  renderStackedBar(handled, total);
+  renderTrend(payload.last_7_days || []);
+  renderFeedbackQuality(payload.feedback || {});
 }
 
 async function loadQuotaStatus() {
   try {
     const response = await fetch("/api/quota");
     if (response.ok) {
-      renderQuotaMeters(await response.json());
+      const payload = await response.json();
+      renderQuotaMeters(payload);
+      return payload;
     }
   } catch {
     if (quotaMeters) {
       quotaMeters.hidden = true;
     }
   }
+  return null;
+}
+
+async function loadDashboardQuota() {
+  renderDashboardQuota(await loadQuotaStatus());
 }
 
 async function loadDashboard() {
@@ -500,12 +839,30 @@ async function loadDashboard() {
 }
 
 function toggleDashboard() {
-  const nextHidden = !dashboard.hidden;
-  dashboard.hidden = nextHidden;
-  dashboardToggle.setAttribute("aria-expanded", String(!nextHidden));
-  if (!nextHidden) {
+  setDashboardOpen(dashboard.hidden);
+  if (!dashboard.hidden) {
     loadDashboard();
-    loadQuotaStatus();
+    loadDashboardQuota();
+  }
+}
+
+function setDashboardOpen(open, fromStack = false) {
+  if (!dashboard) {
+    return;
+  }
+  dashboard.hidden = !open;
+  if (dashboardScrim) {
+    dashboardScrim.hidden = !open;
+  }
+  dashboardToggle.setAttribute("aria-expanded", String(open));
+  document.body.classList.toggle("dashboard-open", open);
+  if (!dashboardOverlay || fromStack) {
+    return;
+  }
+  if (open) {
+    SB.dismissableStack.open(dashboardOverlay);
+  } else {
+    SB.dismissableStack.remove(dashboardOverlay);
   }
 }
 
@@ -580,15 +937,18 @@ async function sendMessage() {
   input.value = "";
   resizeInput();
   isSending = true;
+  appState.composer.isSending = true;
   updateSendState();
   const pending = addMessage("Thinking...", "pending");
   const state = { raw: "", bodyEl: null, displayModel: null, routing: null, failed: false };
+  const privateChat = appState.composer.privateChat;
+  const backend = privateChat ? "ollama" : currentModel;
 
   try {
     const response = await fetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, backend: currentModel, session_id: sessionId }),
+      body: JSON.stringify({ message, backend, session_id: sessionId, private: privateChat }),
     });
     if (!response.ok) {
       const payload = await response.json();
@@ -615,11 +975,13 @@ async function sendMessage() {
     addMessage("Switchboard is not reachable. Is the UI server still running?", "error");
   } finally {
     isSending = false;
+    appState.composer.isSending = false;
     updateSendState();
     loadBackendStatus();
     loadQuotaStatus();
     if (dashboard && !dashboard.hidden) {
       loadDashboard();
+      loadDashboardQuota();
     }
     input.focus();
   }
@@ -630,8 +992,20 @@ async function sendMessage() {
 /* ------------------------------------------------------------------ */
 
 function setMenuOpen(open) {
+  setMenuOpenFromStack(open, false);
+}
+
+function setMenuOpenFromStack(open, fromStack) {
   modelMenu.hidden = !open;
   modelButton.setAttribute("aria-expanded", String(open));
+  if (!modelMenuOverlay || fromStack) {
+    return;
+  }
+  if (open) {
+    SB.dismissableStack.open(modelMenuOverlay);
+  } else {
+    SB.dismissableStack.remove(modelMenuOverlay);
+  }
 }
 
 function renderModelOptions(options) {
@@ -687,16 +1061,23 @@ async function loadBackendStatus() {
     }
     const payload = await response.json();
     renderModelOptions(payload.options || fallbackModelOptions);
-    if (privateMode) {
-      privateMode.hidden = !payload.private_mode;
+    if (appState.composer.privateChat) {
+      applyPrivateChatState(true);
     }
   } catch {
     renderModelOptions(fallbackModelOptions);
+    if (appState.composer.privateChat) {
+      applyPrivateChatState(true);
+    }
   }
 }
 
 function chooseModel(value) {
+  if (appState.composer.privateChat && value !== "ollama") {
+    return;
+  }
   currentModel = value;
+  appState.currentModel = value;
   selectedModel.textContent = modelLabels[value] || value;
   for (const option of modelOptions) {
     const isSelected = option.dataset.model === value;
@@ -715,29 +1096,89 @@ function updateSendState() {
   send.disabled = isSending || input.value.trim().length === 0;
 }
 
+function setPrivacyFloorOpen(open, fromStack = false) {
+  if (!privacyFloor || !privacyFloorPopover) {
+    return;
+  }
+  privacyFloorPopover.hidden = !open;
+  privacyFloor.setAttribute("aria-expanded", String(open));
+  if (!privacyFloorOverlay || fromStack) {
+    return;
+  }
+  if (open) {
+    SB.dismissableStack.open(privacyFloorOverlay);
+  } else {
+    SB.dismissableStack.remove(privacyFloorOverlay);
+  }
+}
+
+function togglePrivateChat() {
+  if (appState.composer.privateChat) {
+    if (
+      !privateOffConfirmed &&
+      !window.confirm(
+        "Earlier messages in this chat may be included as context for premium backends from now on. Continue?"
+      )
+    ) {
+      return;
+    }
+    privateOffConfirmed = true;
+    applyPrivateChatState(false, { persist: true, restoreModel: true });
+    return;
+  }
+  applyPrivateChatState(true, { persist: true });
+}
+
 modelButton.addEventListener("click", () => {
+  if (appState.composer.privateChat) {
+    return;
+  }
   setMenuOpen(modelMenu.hidden);
 });
+
+modelMenuOverlay = SB.dismissableStack.register({
+  id: "model-menu",
+  element: modelMenu,
+  trigger: modelButton,
+  close: () => setMenuOpenFromStack(false, true),
+});
+
+if (dashboard && dashboardToggle) {
+  dashboardOverlay = SB.dismissableStack.register({
+    id: "dashboard",
+    element: dashboard,
+    trigger: dashboardToggle,
+    close: () => setDashboardOpen(false, true),
+  });
+}
+
+if (privacyFloor && privacyFloorPopover) {
+  privacyFloorOverlay = SB.dismissableStack.register({
+    id: "privacy-floor",
+    element: privacyFloorPopover,
+    trigger: privacyFloor,
+    close: () => setPrivacyFloorOpen(false, true),
+  });
+  privacyFloor.addEventListener("click", () => {
+    setPrivacyFloorOpen(privacyFloorPopover.hidden);
+  });
+}
+
+if (privateChatToggle) {
+  privateChatToggle.addEventListener("click", togglePrivateChat);
+}
 
 if (dashboardToggle) {
   dashboardToggle.addEventListener("click", toggleDashboard);
 }
 
+if (dashboardClose) {
+  dashboardClose.addEventListener("click", () => setDashboardOpen(false));
+}
+
 if (newChatButton) {
   newChatButton.addEventListener("click", startNewChat);
 }
-
-document.addEventListener("click", (event) => {
-  if (!event.target.closest(".model-picker")) {
-    setMenuOpen(false);
-  }
-});
-
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    setMenuOpen(false);
-  }
-});
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -756,6 +1197,7 @@ input.addEventListener("keydown", (event) => {
 });
 
 renderModelOptions(fallbackModelOptions);
+applyPrivateChatState(appState.composer.privateChat);
 resizeInput();
 updateSendState();
 loadBackendStatus();

@@ -6,14 +6,16 @@ from collections import Counter
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TypedDict
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from switchboard import __version__
 from switchboard.app.models.backends import SwitchboardResponse, backend_display_name
 from switchboard.app.models.personal import FeedbackCreate, FeedbackRead
+from switchboard.app.models.sessions import ChatSessionRead
 from switchboard.app.services.container import ServiceContainer
 from switchboard.app.services.core_factory import build_configured_core_service
 from switchboard.app.services.local_runtime import OllamaRuntimeService
@@ -21,6 +23,11 @@ from switchboard.app.services.personal_switchboard import PersonalSwitchboardSer
 from switchboard.app.services.quota import PREMIUM_BACKENDS, QuotaLedgerService
 from switchboard.app.services.switchboard_core import SwitchboardCoreService
 from switchboard.app.services.update_check import cached_version_status
+from switchboard.app.utils.remote import (
+    REMOTE_MUTATION_ENV,
+    host_is_loopback,
+    remote_mutations_allowed,
+)
 
 router = APIRouter(tags=["ui"])
 
@@ -39,12 +46,17 @@ UI_VALUE_BY_BACKEND = {
 
 HTTP_DISABLED_CLI_BACKENDS = {"codex", "claude-code"}
 TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
+REMOTE_MUTATION_DETAIL = (
+    "Remote UI mutations are disabled unless "
+    f"{REMOTE_MUTATION_ENV}=1 is set for this server."
+)
 
 
 class UiChatRequest(BaseModel):
     message: str = Field(min_length=1)
     backend: str = "auto"
     session_id: str | None = None
+    private: bool = False
 
 
 class UiChatResponse(BaseModel):
@@ -62,11 +74,14 @@ class UiHistoryMessage(BaseModel):
     backend: str | None = None
     request_id: str | None = None
     routing: dict[str, object] | None = None
+    feedback_rating: str | None = None
+    corrected_backend: str | None = None
     created_at: str
 
 
 class UiHistoryResponse(BaseModel):
     session_id: str
+    private: bool = False
     messages: list[UiHistoryMessage]
 
 
@@ -77,6 +92,35 @@ class UiFeedbackRequest(BaseModel):
     # Thumbs-down disambiguation: "bad_answer" or "wrong_model".
     detail: str | None = None
     corrected_backend: str | None = None  # ollama | codex | claude-code
+
+
+class UiFeedbackPendingResponse(BaseModel):
+    pending: int
+
+
+class UiSessionPatchRequest(BaseModel):
+    title: str | None = None
+    private: bool | None = None
+
+
+class FeedbackAckPayload(TypedDict):
+    pending_corrections: int
+    ack_message: str
+    copy_command: str | None
+    nudge_enable_examples: bool
+
+
+def request_host(request: Request) -> str | None:
+    return request.client.host if request.client is not None else None
+
+
+def require_local_mutation(request: Request) -> None:
+    if host_is_loopback(request_host(request)) or remote_mutations_allowed():
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={"message": REMOTE_MUTATION_DETAIL},
+    )
 
 
 def core_service(request: Request) -> SwitchboardCoreService:
@@ -136,6 +180,7 @@ def routing_chip_metadata(metadata: dict[str, object]) -> dict[str, object]:
     percent = compression_percent(metadata)
     payload: dict[str, object] = {
         "route_type": str(metadata.get("route_type") or ""),
+        "private_chat": bool(metadata.get("private_chat")),
         "privacy_floor": bool(
             metadata.get("private_mode_rerouted")
             or metadata.get("private_mode_would_block")
@@ -217,6 +262,13 @@ def ask_switchboard(
     request: Request,
 ) -> SwitchboardResponse:
     message, selected_backend = validated_message_and_backend(payload)
+    container: ServiceContainer = request.app.state.container
+    stored_session = (
+        container.context_store.get_session(payload.session_id) if payload.session_id else None
+    )
+    private_chat = payload.private or bool(stored_session and stored_session.private)
+    if private_chat:
+        selected_backend = "ollama"
     forced_backend = BACKEND_BY_UI_VALUE[selected_backend]
     if forced_backend in HTTP_DISABLED_CLI_BACKENDS and not http_cli_backends_enabled():
         raise HTTPException(
@@ -233,9 +285,15 @@ def ask_switchboard(
         message,
         backend=forced_backend,
         project="ui",
-        metadata={"surface": "ui", "requested_backend": selected_backend},
+        metadata={
+            "surface": "ui",
+            "requested_backend": payload.backend.strip().lower(),
+            "private_chat": private_chat,
+        },
         session_id=payload.session_id,
     )
+    if private_chat and response.session_id:
+        container.context_store.update_session(response.session_id, private=True)
     return response
 
 
@@ -334,25 +392,64 @@ def chat_history(session_id: str, request: Request) -> UiHistoryResponse:
     if session is None:
         return UiHistoryResponse(session_id=session_id, messages=[])
     records = container.context_store.list_messages(session_id)
-    messages = [
-        UiHistoryMessage(
-            message_id=record.message_id,
-            role=record.role,
-            content=record.content,
-            display_model=record.display_model,
-            backend=record.backend,
-            request_id=str(record.metadata.get("request_id") or "") or None,
-            routing=routing_chip_metadata(
-                metric_metadata(request, str(record.metadata.get("request_id") or ""))
-            )
-            if record.role == "assistant"
-            else None,
-            created_at=record.created_at.isoformat(),
-        )
+    request_ids = [
+        str(record.metadata.get("request_id") or "")
         for record in records
-        if record.role in {"user", "assistant"}
+        if record.role == "assistant" and record.metadata.get("request_id")
     ]
-    return UiHistoryResponse(session_id=session_id, messages=messages)
+    feedback_by_request = container.personal_telemetry_repository.feedback_by_request_ids(
+        request_ids
+    )
+    messages: list[UiHistoryMessage] = []
+    for record in records:
+        if record.role not in {"user", "assistant"}:
+            continue
+        request_id = str(record.metadata.get("request_id") or "") or None
+        feedback = feedback_by_request.get(request_id or "") if record.role == "assistant" else None
+        routing = (
+            routing_chip_metadata(metric_metadata(request, request_id))
+            if record.role == "assistant"
+            else None
+        )
+        messages.append(
+            UiHistoryMessage(
+                message_id=record.message_id,
+                role=record.role,
+                content=record.content,
+                display_model=record.display_model,
+                backend=record.backend,
+                request_id=request_id,
+                routing=routing,
+                feedback_rating=feedback.rating if feedback is not None else None,
+                corrected_backend=feedback.preferred_model if feedback is not None else None,
+                created_at=record.created_at.isoformat(),
+            )
+        )
+    return UiHistoryResponse(session_id=session_id, private=session.private, messages=messages)
+
+
+@router.patch(
+    "/api/sessions/{session_id}",
+    response_model=ChatSessionRead,
+    dependencies=[Depends(require_local_mutation)],
+)
+def update_ui_session(
+    session_id: str,
+    payload: UiSessionPatchRequest,
+    request: Request,
+) -> ChatSessionRead:
+    container: ServiceContainer = request.app.state.container
+    updated = container.context_store.update_session(
+        session_id,
+        title=payload.title,
+        private=payload.private,
+    )
+    if updated is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Unknown session."},
+        )
+    return updated
 
 
 @router.get("/api/backends/status")
@@ -413,7 +510,19 @@ def dashboard(request: Request) -> dict[str, object]:
     usage_by_backend = Counter(record.backend for record in records)
     successful = [record for record in records if record.success]
     premium_calls = sum(1 for record in successful if record.backend in PREMIUM_BACKENDS)
-    premium_avoided = sum(1 for record in successful if record.backend not in PREMIUM_BACKENDS)
+    tool_calls = sum(
+        1
+        for record in successful
+        if record.backend in {"switchboard", "time"} or record.metadata.get("grounded_by_tool")
+    )
+    local_calls = sum(
+        1
+        for record in successful
+        if record.backend not in PREMIUM_BACKENDS
+        and record.backend not in {"switchboard", "time"}
+        and not record.metadata.get("grounded_by_tool")
+    )
+    premium_avoided = local_calls + tool_calls
     compression_saved = 0
     routing_saved = 0
     for record in records:
@@ -430,6 +539,12 @@ def dashboard(request: Request) -> dict[str, object]:
         counts_by_day[key]["requests"] += 1
         if record.success and record.backend in PREMIUM_BACKENDS:
             counts_by_day[key]["premium_calls"] += 1
+        elif record.success and (
+            record.backend in {"switchboard", "time"} or record.metadata.get("grounded_by_tool")
+        ):
+            counts_by_day[key]["tool_calls"] += 1
+        elif record.success:
+            counts_by_day[key]["local_calls"] += 1
     for days_ago in range(6, -1, -1):
         day = (now - timedelta(days=days_ago)).date().isoformat()
         counts = counts_by_day.get(day, Counter())
@@ -437,15 +552,23 @@ def dashboard(request: Request) -> dict[str, object]:
             {
                 "date": day,
                 "requests": counts.get("requests", 0),
+                "local_calls": counts.get("local_calls", 0),
+                "tool_calls": counts.get("tool_calls", 0),
                 "premium_calls": counts.get("premium_calls", 0),
             }
         )
+    feedback_summary = container.personal_telemetry_repository.feedback_summary()
 
     return {
         "window_days": 7,
         "total_requests": len(records),
         "premium_calls": premium_calls,
         "premium_calls_avoided_vs_always_premium": premium_avoided,
+        "handled_requests": {
+            "local": local_calls,
+            "tools": tool_calls,
+            "premium": premium_calls,
+        },
         "estimated_tokens_saved": {
             "compression": compression_saved,
             "routing": routing_saved,
@@ -453,6 +576,13 @@ def dashboard(request: Request) -> dict[str, object]:
         },
         "usage_by_backend": dict(usage_by_backend),
         "last_7_days": trend,
+        "feedback": {
+            "total": feedback_summary["total"],
+            "good": feedback_summary["positive"],
+            "bad": feedback_summary["bad"],
+            "corrected": feedback_summary["wrong_route"],
+            "pending_corrections": feedback_pending_count(container),
+        },
     }
 
 
@@ -478,6 +608,66 @@ def version_status() -> dict[str, object]:
 VALID_CORRECTED_BACKENDS = ("ollama", "codex", "claude-code")
 
 
+def feedback_pending_count(container: ServiceContainer) -> int:
+    try:
+        from switchboard.training.feedback_loop import FeedbackExampleStore
+
+        return FeedbackExampleStore(
+            container.memory_repository.engine
+        ).unprocessed_wrong_model_count()
+    except Exception:
+        return 0
+
+
+def feedback_ack_payload(
+    container: ServiceContainer,
+    *,
+    rating: str,
+    pending: int,
+) -> FeedbackAckPayload:
+    preferences = container.personal_config.preferences
+    if rating != "wrong-route":
+        return {
+            "pending_corrections": pending,
+            "ack_message": "Saved.",
+            "copy_command": None,
+            "nudge_enable_examples": False,
+        }
+    if not preferences.store_feedback_examples:
+        return {
+            "pending_corrections": pending,
+            "ack_message": (
+                "Saved - this correction immediately nudges routing preferences. "
+                "To also retrain the classifier from your corrections, enable "
+                "store_feedback_examples."
+            ),
+            "copy_command": None,
+            "nudge_enable_examples": True,
+        }
+    if preferences.feedback_auto_retrain:
+        threshold = preferences.feedback_retrain_threshold
+        return {
+            "pending_corrections": pending,
+            "ack_message": (
+                f"Saved - {pending} of {threshold} corrections until the router "
+                "retrains automatically."
+            ),
+            "copy_command": None,
+            "nudge_enable_examples": False,
+        }
+    command = "switchboard train-router"
+    return {
+        "pending_corrections": pending,
+        "ack_message": (
+            f"Saved - {pending} corrections pending. Run `{command}` to apply."
+            if pending >= 3
+            else f"Saved - {pending} corrections pending."
+        ),
+        "copy_command": command if pending >= 3 else None,
+        "nudge_enable_examples": False,
+    }
+
+
 @router.post("/api/chat/feedback", response_model=FeedbackRead)
 def chat_feedback(payload: UiFeedbackRequest, request: Request) -> FeedbackRead:
     container: ServiceContainer = request.app.state.container
@@ -489,6 +679,10 @@ def chat_feedback(payload: UiFeedbackRequest, request: Request) -> FeedbackRead:
         )
     detail = (payload.detail or "").strip().lower() or None
     corrected = (payload.corrected_backend or "").strip().lower() or None
+    if rating == "wrong-route":
+        detail = "wrong_model"
+    if rating == "bad":
+        detail = detail or "bad_answer"
     if detail == "wrong_model" and corrected not in VALID_CORRECTED_BACKENDS:
         # Reject before anything is stored: a wrong-model verdict without a
         # valid correction cannot train the router but would still count
@@ -506,6 +700,7 @@ def chat_feedback(payload: UiFeedbackRequest, request: Request) -> FeedbackRead:
             request_id=payload.request_id.strip(),
             rating=rating,
             note=payload.note,
+            preferred_model=corrected if detail == "wrong_model" else None,
         )
     )
     _store_feedback_example(
@@ -515,7 +710,33 @@ def chat_feedback(payload: UiFeedbackRequest, request: Request) -> FeedbackRead:
         detail=detail,
         corrected_backend=corrected,
     )
+    pending = feedback_pending_count(container)
+    ack = feedback_ack_payload(container, rating=rating, pending=pending)
+    result.pending_corrections = ack["pending_corrections"]
+    result.ack_message = ack["ack_message"]
+    result.copy_command = ack["copy_command"]
+    result.nudge_enable_examples = ack["nudge_enable_examples"]
     return result
+
+
+@router.delete(
+    "/api/chat/feedback/{request_id}",
+    dependencies=[Depends(require_local_mutation)],
+)
+def delete_chat_feedback(request_id: str, request: Request) -> dict[str, object]:
+    container: ServiceContainer = request.app.state.container
+    deleted = container.personal_telemetry_repository.delete_feedback(request_id.strip())
+    return {
+        "request_id": request_id,
+        "deleted": deleted,
+        "pending": feedback_pending_count(container),
+    }
+
+
+@router.get("/api/feedback/pending", response_model=UiFeedbackPendingResponse)
+def feedback_pending(request: Request) -> UiFeedbackPendingResponse:
+    container: ServiceContainer = request.app.state.container
+    return UiFeedbackPendingResponse(pending=feedback_pending_count(container))
 
 
 def _store_feedback_example(
@@ -542,8 +763,6 @@ def _store_feedback_example(
     correction is the user's deliberate choice.
     """
     preferences = container.personal_config.preferences
-    if not preferences.store_feedback_examples or rating == "good":
-        return
     try:
         from switchboard.app.models.telemetry import FeedbackExampleRecord
         from switchboard.training.feedback_loop import (
@@ -552,10 +771,15 @@ def _store_feedback_example(
         )
 
         engine = container.memory_repository.engine
+        store = FeedbackExampleStore(engine)
+        if rating == "good" or not preferences.store_feedback_examples:
+            store.delete_example(request_id)
+            return
         metric = container.backend_metrics_repository.get(request_id)
         if metric is None:
             # Unknown request: storing an empty example would only pad the
             # retrain threshold with noise.
+            store.delete_example(request_id)
             return
         backend = metric.backend
         route_type = str(metric.metadata.get("route_type") or "") or None
@@ -573,7 +797,6 @@ def _store_feedback_example(
                         prompt_text = message.content
                     elif message.role == "assistant":
                         response_text = message.content
-        store = FeedbackExampleStore(engine)
         store.add_example(
             FeedbackExampleRecord(
                 request_id=request_id,
@@ -587,10 +810,11 @@ def _store_feedback_example(
                 backend=backend,
             )
         )
-        maybe_trigger_retraining(
-            engine=engine,
-            threshold=preferences.feedback_retrain_threshold,
-            weights_path=preferences.router_weights_path,
-        )
+        if preferences.feedback_auto_retrain:
+            maybe_trigger_retraining(
+                engine=engine,
+                threshold=preferences.feedback_retrain_threshold,
+                weights_path=preferences.router_weights_path,
+            )
     except Exception:  # feedback storage must never fail the click
         pass

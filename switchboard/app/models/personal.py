@@ -83,6 +83,7 @@ class PersonalPreferences(BaseModel):
     # "wrong model" examples accumulate. Local-only; purge with
     # `switchboard feedback-examples --purge`.
     store_feedback_examples: bool = False
+    feedback_auto_retrain: bool = True
     feedback_retrain_threshold: int = 5
     project_overrides: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
@@ -317,3 +318,7 @@ class FeedbackRead(BaseModel):
     note: str | None = None
     preferred_model: str | None = None
     created_at: str
+    pending_corrections: int | None = None
+    ack_message: str | None = None
+    copy_command: str | None = None
+    nudge_enable_examples: bool = False

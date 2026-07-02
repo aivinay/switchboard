@@ -10,10 +10,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added `switchboard version`, global `switchboard --version`,
   `switchboard upgrade [--check]`, and the opt-out daily PyPI update check.
 - Added `GET /api/version` for cached UI update status.
+- Added reversible web-UI feedback controls, `DELETE /api/chat/feedback/{request_id}`,
+  and `GET /api/feedback/pending`.
+- Added a persisted web-UI Private chat toggle, `PATCH /api/sessions/{session_id}`,
+  and a remote mutation guard for session updates and feedback retraction.
+- Added the web-UI Savings drawer with quota framing, local/tool/premium request mix,
+  token-savings splits, 7-day trend segments, and feedback quality counts.
 
 ### Fixed
 - Replaced the stale source-checkout `__version__` fallback with
   `pyproject.toml` discovery.
+- Made web feedback an upsert per request and scrub pending wrong-model examples when
+  feedback is retracted or changed to `good`.
+- Made Private chat force Ollama from both client intent and stored session state, with
+  no premium fallback when Ollama is unavailable.
 
 ## [0.3.0] - 2026-07-02
 
