@@ -87,8 +87,14 @@ instructions are recorded as reason codes for auditability; they do not override
 
 `switchboard ui` binds to `127.0.0.1` by default and is unauthenticated. Keep it on
 loopback for normal use. If you bind the UI to a non-loopback host, startup prints a
-warning; session updates and feedback retraction return `403` for remote clients unless
-`SWITCHBOARD_ALLOW_REMOTE_MUTATIONS=1` is set.
+warning; session updates, session deletion/undo, and feedback retraction return `403`
+for remote clients unless `SWITCHBOARD_ALLOW_REMOTE_MUTATIONS=1` is set.
+
+The sidebar can list and search chat session titles and message text from local storage.
+Bare CLI one-shots do not flood the visible list unless you title them, but search can
+find non-deleted sessions across UI and CLI surfaces. Deleted sessions are tombstoned
+for the UI Undo window, hidden from list/search/history immediately, and purged with
+their messages on a later cleanup.
 
 The web UI's Private chat toggle is separate from the privacy floor. The floor is always
 on for sensitive prompts; Private chat forces every message in that chat to Ollama and

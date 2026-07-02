@@ -14,6 +14,8 @@ class ChatSessionRecord(SQLModel, table=True):
     title: str | None = None
     summary: str | None = None
     private: bool = SQLField(default=False, index=True)
+    origin: str | None = SQLField(default=None, index=True)
+    deleted_at: datetime | None = SQLField(default=None, index=True)
     created_at: datetime = SQLField(default_factory=utc_now, index=True)
     updated_at: datetime = SQLField(default_factory=utc_now, index=True)
 
@@ -36,8 +38,31 @@ class ChatSessionRead(BaseModel):
     title: str | None = None
     summary: str | None = None
     private: bool = False
+    origin: str | None = None
+    deleted_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class ChatSessionListItem(BaseModel):
+    session_id: str
+    title: str
+    stored_title: str | None = None
+    message_count: int
+    updated_at: datetime
+    private: bool = False
+    backend_summary: str
+    origin: str | None = None
+
+
+class ChatSessionSearchResult(BaseModel):
+    session_id: str
+    title: str
+    snippet: str
+    updated_at: datetime
+    private: bool = False
+    backend_summary: str
+    origin: str | None = None
 
 
 class ChatMessageRead(BaseModel):

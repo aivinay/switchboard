@@ -13,6 +13,10 @@ The web UI's Savings drawer uses the same local metrics plus `/api/dashboard` an
 `/api/quota`; it shows request counts, token-savings estimates, declared soft-budget
 windows, and feedback counts without dollar figures.
 
+The web UI sidebar lists chats started in the UI plus CLI sessions you explicitly title.
+Search spans all non-deleted sessions, including CLI one-shots. Deleting a session is a
+soft delete with a short Undo window; old tombstones are purged on the next UI startup.
+
 ## Route And Ask
 
 `switchboard route` previews the backend decision without calling a model:

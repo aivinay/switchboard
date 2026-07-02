@@ -25,13 +25,14 @@ class SessionManager:
         *,
         session_id: str | None = None,
         new_session: bool = False,
+        origin: str | None = None,
     ) -> ChatSessionRead:
         if new_session or not session_id:
-            return self.store.create_session()
+            return self.store.create_session(origin=origin)
         existing = self.store.get_session(session_id)
         if existing is not None:
             return existing
-        return self.store.create_session(session_id=session_id)
+        return self.store.create_session(session_id=session_id, origin=origin)
 
 
 class ContextBuilder:

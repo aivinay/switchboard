@@ -15,7 +15,11 @@ from pydantic import BaseModel, Field
 from switchboard import __version__
 from switchboard.app.models.backends import SwitchboardResponse, backend_display_name
 from switchboard.app.models.personal import FeedbackCreate, FeedbackRead
-from switchboard.app.models.sessions import ChatSessionRead
+from switchboard.app.models.sessions import (
+    ChatSessionListItem,
+    ChatSessionRead,
+    ChatSessionSearchResult,
+)
 from switchboard.app.services.container import ServiceContainer
 from switchboard.app.services.core_factory import build_configured_core_service
 from switchboard.app.services.local_runtime import OllamaRuntimeService
@@ -101,6 +105,20 @@ class UiFeedbackPendingResponse(BaseModel):
 class UiSessionPatchRequest(BaseModel):
     title: str | None = None
     private: bool | None = None
+
+
+class UiSessionsResponse(BaseModel):
+    sessions: list[ChatSessionListItem]
+
+
+class UiSessionSearchResponse(BaseModel):
+    results: list[ChatSessionSearchResult]
+
+
+class UiSessionDeleteResponse(BaseModel):
+    session_id: str
+    deleted: bool
+    undo_seconds: int = 10
 
 
 class FeedbackAckPayload(TypedDict):
@@ -385,6 +403,28 @@ def chat_stream(payload: UiChatRequest, request: Request) -> StreamingResponse:
     )
 
 
+@router.get("/api/sessions", response_model=UiSessionsResponse)
+def list_ui_sessions(
+    request: Request,
+    limit: int = 100,
+    before: datetime | None = None,
+) -> UiSessionsResponse:
+    container: ServiceContainer = request.app.state.container
+    sessions = container.context_store.list_sessions(limit=limit, before=before)
+    return UiSessionsResponse(sessions=sessions)
+
+
+@router.get("/api/sessions/search", response_model=UiSessionSearchResponse)
+def search_ui_sessions(
+    q: str,
+    request: Request,
+    limit: int = 20,
+) -> UiSessionSearchResponse:
+    container: ServiceContainer = request.app.state.container
+    results = container.context_store.search_sessions(q, limit=limit)
+    return UiSessionSearchResponse(results=results)
+
+
 @router.get("/api/chat/history", response_model=UiHistoryResponse)
 def chat_history(session_id: str, request: Request) -> UiHistoryResponse:
     container: ServiceContainer = request.app.state.container
@@ -439,9 +479,12 @@ def update_ui_session(
     request: Request,
 ) -> ChatSessionRead:
     container: ServiceContainer = request.app.state.container
+    title = payload.title.strip() if payload.title is not None else None
+    if title == "":
+        title = None
     updated = container.context_store.update_session(
         session_id,
-        title=payload.title,
+        title=title,
         private=payload.private,
     )
     if updated is None:
@@ -450,6 +493,38 @@ def update_ui_session(
             detail={"message": "Unknown session."},
         )
     return updated
+
+
+@router.delete(
+    "/api/sessions/{session_id}",
+    response_model=UiSessionDeleteResponse,
+    dependencies=[Depends(require_local_mutation)],
+)
+def delete_ui_session(session_id: str, request: Request) -> UiSessionDeleteResponse:
+    container: ServiceContainer = request.app.state.container
+    deleted = container.context_store.delete_session(session_id)
+    if deleted is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Unknown session."},
+        )
+    return UiSessionDeleteResponse(session_id=session_id, deleted=True)
+
+
+@router.post(
+    "/api/sessions/{session_id}/undo-delete",
+    response_model=ChatSessionRead,
+    dependencies=[Depends(require_local_mutation)],
+)
+def undo_delete_ui_session(session_id: str, request: Request) -> ChatSessionRead:
+    container: ServiceContainer = request.app.state.container
+    restored = container.context_store.restore_session(session_id)
+    if restored is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Unknown session."},
+        )
+    return restored
 
 
 @router.get("/api/backends/status")

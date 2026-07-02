@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -12,6 +13,7 @@ from switchboard.app.core.config import Settings, get_settings
 from switchboard.app.core.logging import configure_logging
 from switchboard.app.services.container import build_container
 from switchboard.app.storage.db import create_db_engine, init_db
+from switchboard.app.storage.repositories import ContextStore
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -21,6 +23,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or get_settings()
     engine = create_db_engine(resolved_settings.database_url)
     init_db(engine)
+    ContextStore(engine).purge_deleted_sessions(
+        before=datetime.now(UTC) - timedelta(seconds=10)
+    )
 
     app = FastAPI(
         title="Switchboard",

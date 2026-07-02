@@ -4,6 +4,21 @@ const form = document.querySelector("#chat-form");
 const input = document.querySelector("#message");
 const send = document.querySelector("#send");
 const messages = document.querySelector("#messages");
+const sidebar = document.querySelector("#sidebar");
+const sidebarScrim = document.querySelector("#sidebar-scrim");
+const sidebarToggle = document.querySelector("#sidebar-toggle");
+const sidebarCollapse = document.querySelector("#sidebar-collapse");
+const sidebarNewChat = document.querySelector("#sidebar-new-chat");
+const sessionSearch = document.querySelector("#session-search");
+const sessionList = document.querySelector("#session-list");
+const sessionLoadMore = document.querySelector("#session-load-more");
+const sessionToast = document.querySelector("#session-toast");
+const versionPill = document.querySelector("#version-pill");
+const uiVersion = document.querySelector("#ui-version");
+const updateBadge = document.querySelector("#update-badge");
+const versionPopover = document.querySelector("#version-popover");
+const versionCopy = document.querySelector("#version-copy");
+const copyUpgradeCommand = document.querySelector("#copy-upgrade-command");
 const modelButton = document.querySelector("#model-picker-button");
 const selectedModel = document.querySelector("#selected-model");
 const modelMenu = document.querySelector("#model-menu");
@@ -21,7 +36,6 @@ const privacyFloor = document.querySelector("#privacy-floor");
 const privacyFloorPopover = document.querySelector("#privacy-floor-popover");
 const privateChatToggle = document.querySelector("#private-chat-toggle");
 const modelLockNote = document.querySelector("#model-lock-note");
-const newChatButton = document.querySelector("#new-chat");
 const metricPremiumAvoided = document.querySelector("#metric-premium-avoided");
 const metricTokensCompression = document.querySelector("#metric-tokens-compression");
 const metricTokensRouting = document.querySelector("#metric-tokens-routing");
@@ -46,8 +60,14 @@ let modelOptions = [];
 let modelMenuOverlay = null;
 let privacyFloorOverlay = null;
 let dashboardOverlay = null;
+let sidebarOverlay = null;
+let versionOverlay = null;
 let modelBeforePrivate = currentModel === "ollama" ? "auto" : currentModel;
 let privateOffConfirmed = false;
+let visibleSessions = [];
+let sessionSearchTimer = null;
+let sessionListBefore = null;
+let sessionUndoTimer = null;
 
 /* ------------------------------------------------------------------ */
 /* Minimal safe markdown renderer (local-first: no CDN dependencies). */
@@ -189,7 +209,43 @@ function scrollToBottom() {
   messages.scrollTop = messages.scrollHeight;
 }
 
+function clearWelcome() {
+  const welcome = messages.querySelector(".welcome-panel");
+  if (welcome) {
+    welcome.remove();
+  }
+}
+
+function showWelcomeIfEmpty() {
+  if (messages.children.length > 0) {
+    return;
+  }
+  const panel = document.createElement("div");
+  panel.className = "welcome-panel";
+  const title = document.createElement("h2");
+  title.textContent = "Start with a route you can see";
+  panel.appendChild(title);
+  for (const prompt of [
+    "Summarize this paragraph in three local-first bullets.",
+    "Design a caching strategy for a busy API.",
+    "My SSN is 123-45-6789 — draft a letter asking to correct a record.",
+  ]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = prompt;
+    button.addEventListener("click", () => {
+      input.value = prompt;
+      resizeInput();
+      updateSendState();
+      sendMessage();
+    });
+    panel.appendChild(button);
+  }
+  messages.appendChild(panel);
+}
+
 function addMessage(text, role) {
+  clearWelcome();
   const item = document.createElement("div");
   item.className = `message ${role}`;
   const body = document.createElement("div");
@@ -202,6 +258,7 @@ function addMessage(text, role) {
 }
 
 function addAssistantMessage({ markdown, displayModel, routing }) {
+  clearWelcome();
   const item = document.createElement("div");
   item.className = "message assistant";
   const body = document.createElement("div");
@@ -527,6 +584,7 @@ function makeFeedbackControls(requestId, initial = {}) {
 
 async function loadHistory() {
   if (!sessionId) {
+    showWelcomeIfEmpty();
     return;
   }
   try {
@@ -538,6 +596,7 @@ async function loadHistory() {
     }
     const payload = await response.json();
     applyPrivateChatState(Boolean(payload.private));
+    messages.textContent = "";
     for (const message of payload.messages || []) {
       if (message.role === "user") {
         addMessage(message.content, "user");
@@ -557,8 +616,10 @@ async function loadHistory() {
         });
       }
     }
+    showWelcomeIfEmpty();
   } catch {
     /* offline or first run: start with an empty thread */
+    showWelcomeIfEmpty();
   }
 }
 
@@ -619,7 +680,385 @@ function startNewChat() {
   applyPrivateChatState(false, { restoreModel: true });
   window.localStorage.removeItem(sessionStorageKey);
   messages.textContent = "";
+  showWelcomeIfEmpty();
   input.focus();
+}
+
+/* ------------------------------------------------------------------ */
+/* Sidebar sessions                                                    */
+/* ------------------------------------------------------------------ */
+
+function setSidebarCollapsed(collapsed) {
+  appState.sidebar.collapsed = collapsed;
+  document.body.classList.toggle("sidebar-collapsed", collapsed);
+  window.localStorage.setItem(SB.storageKeys.sidebarCollapsed, collapsed ? "1" : "0");
+  if (sidebarCollapse) {
+    sidebarCollapse.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+  }
+}
+
+function setSidebarOpen(open, fromStack = false) {
+  document.body.classList.toggle("sidebar-open", open);
+  if (sidebarScrim) {
+    sidebarScrim.hidden = !open;
+  }
+  if (!sidebarOverlay || fromStack) {
+    return;
+  }
+  if (open) {
+    SB.dismissableStack.open(sidebarOverlay);
+  } else {
+    SB.dismissableStack.remove(sidebarOverlay);
+  }
+}
+
+function sessionGroupLabel(updatedAt) {
+  const date = new Date(updatedAt);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) {
+    return "Today";
+  }
+  if (date.toDateString() === yesterday.toDateString()) {
+    return "Yesterday";
+  }
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function backendDot(summary) {
+  const dot = document.createElement("span");
+  dot.className = `backend-dot ${summary || "empty"}`;
+  dot.title =
+    summary === "mixed"
+      ? "Mixed local and premium"
+      : summary === "premium"
+        ? "Premium touched"
+        : summary === "local"
+          ? "Local only"
+          : "No assistant messages";
+  return dot;
+}
+
+function appendHighlightedSnippet(container, text, query) {
+  const value = String(text || "");
+  const needle = query.trim().toLowerCase();
+  if (!needle) {
+    container.textContent = value;
+    return;
+  }
+  const lower = value.toLowerCase();
+  let cursor = 0;
+  let match = lower.indexOf(needle);
+  while (match >= 0) {
+    if (match > cursor) {
+      container.appendChild(document.createTextNode(value.slice(cursor, match)));
+    }
+    const mark = document.createElement("mark");
+    mark.textContent = value.slice(match, match + needle.length);
+    container.appendChild(mark);
+    cursor = match + needle.length;
+    match = lower.indexOf(needle, cursor);
+  }
+  if (cursor < value.length) {
+    container.appendChild(document.createTextNode(value.slice(cursor)));
+  }
+}
+
+function updateActiveSessionRows() {
+  for (const row of sessionList?.querySelectorAll(".session-row") || []) {
+    row.classList.toggle("active", row.dataset.sessionId === sessionId);
+  }
+}
+
+function rowMeta(session) {
+  const meta = document.createElement("span");
+  meta.className = "session-meta";
+  if (session.private) {
+    const lock = document.createElement("span");
+    lock.className = "session-lock";
+    lock.textContent = "🔒";
+    meta.appendChild(lock);
+  }
+  meta.appendChild(backendDot(session.backend_summary));
+  return meta;
+}
+
+function renderSessionRow(session, query = "") {
+  const row = document.createElement("div");
+  row.tabIndex = 0;
+  row.setAttribute("role", "button");
+  row.className = "session-row";
+  row.dataset.sessionId = session.session_id;
+  row.addEventListener("click", () => openSession(session.session_id));
+  row.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      openSession(session.session_id);
+    }
+  });
+  const meta = rowMeta(session);
+  const title = document.createElement("span");
+  title.className = "session-title";
+  title.textContent = session.title;
+  row.appendChild(meta);
+  row.appendChild(title);
+
+  const actions = document.createElement("span");
+  actions.className = "session-actions";
+  const rename = document.createElement("button");
+  rename.type = "button";
+  rename.textContent = "Rename";
+  rename.addEventListener("click", (event) => {
+    event.stopPropagation();
+    startRenameSession(session, row);
+  });
+  const del = document.createElement("button");
+  del.type = "button";
+  del.textContent = "Delete";
+  del.addEventListener("click", (event) => {
+    event.stopPropagation();
+    deleteSession(session.session_id);
+  });
+  actions.appendChild(rename);
+  actions.appendChild(del);
+  row.appendChild(actions);
+
+  if (query && session.snippet !== undefined) {
+    const snippet = document.createElement("span");
+    snippet.className = "session-snippet";
+    appendHighlightedSnippet(snippet, session.snippet, query);
+    row.appendChild(snippet);
+  }
+  return row;
+}
+
+function renderSessionList(sessions, { query = "", append = false, search = false } = {}) {
+  if (!sessionList) {
+    return;
+  }
+  if (!append) {
+    sessionList.textContent = "";
+  }
+  if (!sessions.length && !append) {
+    const empty = document.createElement("p");
+    empty.className = "sidebar-empty";
+    empty.textContent = query
+      ? `No matches for '${query}' — search covers all sessions, including CLI ones.`
+      : "Chats you start here and in the CLI (when titled) appear here.";
+    sessionList.appendChild(empty);
+    return;
+  }
+  let currentGroup = "";
+  for (const session of sessions) {
+    const group = search ? "Search results" : sessionGroupLabel(session.updated_at);
+    if (group !== currentGroup) {
+      currentGroup = group;
+      const heading = document.createElement("div");
+      heading.className = "session-group";
+      heading.textContent = group;
+      sessionList.appendChild(heading);
+    }
+    sessionList.appendChild(renderSessionRow(session, query));
+  }
+  updateActiveSessionRows();
+}
+
+async function loadSessions({ append = false } = {}) {
+  if (!sessionList) {
+    return;
+  }
+  const params = new URLSearchParams({ limit: "100" });
+  if (append && sessionListBefore) {
+    params.set("before", sessionListBefore);
+  }
+  const response = await fetch(`/api/sessions?${params.toString()}`);
+  if (!response.ok) {
+    return;
+  }
+  const payload = await response.json();
+  const sessions = payload.sessions || [];
+  visibleSessions = append ? [...visibleSessions, ...sessions] : sessions;
+  renderSessionList(sessions, { append });
+  sessionListBefore = sessions.length ? sessions[sessions.length - 1].updated_at : null;
+  if (sessionLoadMore) {
+    sessionLoadMore.hidden = sessions.length < 100;
+  }
+}
+
+function filterVisibleSessions(query) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) {
+    renderSessionList(visibleSessions);
+    return;
+  }
+  renderSessionList(
+    visibleSessions.filter((session) => session.title.toLowerCase().includes(needle)),
+    { query }
+  );
+}
+
+async function searchSessions(query) {
+  if (query.trim().length < 2) {
+    filterVisibleSessions(query);
+    return;
+  }
+  const response = await fetch(
+    `/api/sessions/search?q=${encodeURIComponent(query.trim())}`
+  );
+  if (!response.ok) {
+    return;
+  }
+  const payload = await response.json();
+  renderSessionList(payload.results || [], { query, search: true });
+}
+
+function scheduleSessionSearch() {
+  const query = sessionSearch?.value || "";
+  filterVisibleSessions(query);
+  if (sessionSearchTimer) {
+    clearTimeout(sessionSearchTimer);
+  }
+  sessionSearchTimer = setTimeout(() => searchSessions(query), 300);
+}
+
+async function openSession(nextSessionId) {
+  if (!nextSessionId) {
+    return;
+  }
+  sessionId = nextSessionId;
+  appState.sessionId = nextSessionId;
+  window.localStorage.setItem(sessionStorageKey, nextSessionId);
+  messages.textContent = "";
+  updateActiveSessionRows();
+  await loadHistory();
+  setSidebarOpen(false);
+}
+
+function startRenameSession(session, row) {
+  const inputEl = document.createElement("input");
+  inputEl.className = "session-rename";
+  inputEl.value = session.stored_title || session.title;
+  row.replaceChildren(inputEl);
+  inputEl.focus();
+  inputEl.select();
+  async function save() {
+    const title = inputEl.value.trim();
+    const response = await fetch(`/api/sessions/${encodeURIComponent(session.session_id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    if (response.ok) {
+      loadSessions();
+    }
+  }
+  inputEl.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      save();
+    } else if (event.key === "Escape") {
+      loadSessions();
+    }
+  });
+  inputEl.addEventListener("blur", save);
+}
+
+function showSessionToast(sessionIdForUndo) {
+  if (!sessionToast) {
+    return;
+  }
+  if (sessionUndoTimer) {
+    clearTimeout(sessionUndoTimer);
+  }
+  sessionToast.textContent = "";
+  const message = document.createElement("span");
+  message.textContent = "Session deleted";
+  const undo = document.createElement("button");
+  undo.type = "button";
+  undo.textContent = "Undo";
+  undo.addEventListener("click", async () => {
+    const response = await fetch(
+      `/api/sessions/${encodeURIComponent(sessionIdForUndo)}/undo-delete`,
+      { method: "POST" }
+    );
+    if (response.ok) {
+      sessionToast.hidden = true;
+      loadSessions();
+    }
+  });
+  sessionToast.appendChild(message);
+  sessionToast.appendChild(undo);
+  sessionToast.hidden = false;
+  sessionUndoTimer = setTimeout(() => {
+    sessionToast.hidden = true;
+  }, 10000);
+}
+
+async function deleteSession(sessionIdToDelete) {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionIdToDelete)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    return;
+  }
+  if (sessionIdToDelete === sessionId) {
+    startNewChat();
+  }
+  showSessionToast(sessionIdToDelete);
+  loadSessions();
+}
+
+/* ------------------------------------------------------------------ */
+/* Version footer                                                      */
+/* ------------------------------------------------------------------ */
+
+function setVersionPopoverOpen(open, fromStack = false) {
+  if (!versionPopover || !versionPill) {
+    return;
+  }
+  versionPopover.hidden = !open;
+  versionPill.setAttribute("aria-expanded", String(open));
+  if (!versionOverlay || fromStack) {
+    return;
+  }
+  if (open) {
+    SB.dismissableStack.open(versionOverlay);
+  } else {
+    SB.dismissableStack.remove(versionOverlay);
+  }
+}
+
+async function loadVersionStatus() {
+  if (!uiVersion) {
+    return;
+  }
+  try {
+    const response = await fetch("/api/version");
+    if (!response.ok) {
+      return;
+    }
+    const payload = await response.json();
+    uiVersion.textContent = `v${payload.installed || "unknown"}`;
+    const upgradeCommand = "switchboard upgrade";
+    if (payload.update_available && payload.latest) {
+      updateBadge.hidden = false;
+      versionCopy.textContent = `Switchboard ${payload.latest} is available. Run ${upgradeCommand}.`;
+      copyUpgradeCommand.hidden = false;
+      copyUpgradeCommand.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(upgradeCommand);
+          copyUpgradeCommand.textContent = "Copied";
+        } catch {
+          copyUpgradeCommand.textContent = "Failed";
+        }
+      };
+    } else {
+      updateBadge.hidden = true;
+      versionCopy.textContent = "Switchboard is up to date.";
+      copyUpgradeCommand.hidden = true;
+    }
+  } catch {
+    uiVersion.textContent = "vunknown";
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -983,6 +1422,7 @@ async function sendMessage() {
       loadDashboard();
       loadDashboardQuota();
     }
+    loadSessions();
     input.focus();
   }
 }
@@ -1164,6 +1604,27 @@ if (privacyFloor && privacyFloorPopover) {
   });
 }
 
+if (sidebar && sidebarToggle) {
+  sidebarOverlay = SB.dismissableStack.register({
+    id: "sidebar",
+    element: sidebar,
+    trigger: sidebarToggle,
+    close: () => setSidebarOpen(false, true),
+  });
+}
+
+if (versionPill && versionPopover) {
+  versionOverlay = SB.dismissableStack.register({
+    id: "version",
+    element: versionPopover,
+    trigger: versionPill,
+    close: () => setVersionPopoverOpen(false, true),
+  });
+  versionPill.addEventListener("click", () => {
+    setVersionPopoverOpen(versionPopover.hidden);
+  });
+}
+
 if (privateChatToggle) {
   privateChatToggle.addEventListener("click", togglePrivateChat);
 }
@@ -1176,8 +1637,29 @@ if (dashboardClose) {
   dashboardClose.addEventListener("click", () => setDashboardOpen(false));
 }
 
-if (newChatButton) {
-  newChatButton.addEventListener("click", startNewChat);
+if (sidebarToggle) {
+  sidebarToggle.addEventListener("click", () => setSidebarOpen(true));
+}
+
+if (sidebarCollapse) {
+  sidebarCollapse.addEventListener("click", () => {
+    setSidebarCollapsed(!appState.sidebar.collapsed);
+  });
+}
+
+if (sidebarNewChat) {
+  sidebarNewChat.addEventListener("click", () => {
+    startNewChat();
+    setSidebarOpen(false);
+  });
+}
+
+if (sessionSearch) {
+  sessionSearch.addEventListener("input", scheduleSessionSearch);
+}
+
+if (sessionLoadMore) {
+  sessionLoadMore.addEventListener("click", () => loadSessions({ append: true }));
 }
 
 form.addEventListener("submit", (event) => {
@@ -1197,9 +1679,12 @@ input.addEventListener("keydown", (event) => {
 });
 
 renderModelOptions(fallbackModelOptions);
+setSidebarCollapsed(appState.sidebar.collapsed);
 applyPrivateChatState(appState.composer.privateChat);
 resizeInput();
 updateSendState();
+loadSessions();
+loadVersionStatus();
 loadBackendStatus();
 loadQuotaStatus();
 loadHistory();
