@@ -35,6 +35,11 @@ from switchboard.app.services.core_factory import (
     build_semantic_memory,
 )
 from switchboard.app.services.local_runtime import OllamaRuntimeService
+from switchboard.app.services.model_recommendations import (
+    apply_local_model_pack,
+    detect_total_ram_bytes,
+    recommend_local_model_pack,
+)
 from switchboard.app.services.personal_switchboard import (
     PersonalRoutingError,
     PersonalSwitchboardService,
@@ -568,6 +573,47 @@ def personal_ask_command(args: argparse.Namespace) -> None:
 
 
 def models_command(args: argparse.Namespace) -> None:
+    if args.recommend:
+        settings = get_settings()
+        catalogue = ModelCatalogue.from_yaml(settings.models_config_path)
+        total_ram_bytes = detect_total_ram_bytes()
+        recommendation = recommend_local_model_pack(
+            catalogue,
+            total_ram_bytes=total_ram_bytes,
+        )
+        if total_ram_bytes is None:
+            print(f"Detected RAM: unknown (using {recommendation.tier} tier)")
+        else:
+            print(
+                "Detected RAM: "
+                f"{total_ram_bytes / (1024**3):.1f} GiB ({recommendation.tier} tier)"
+            )
+        print("Recommended Ollama pack:")
+        for role in recommendation.roles:
+            print(f"  {role.role:10} {role.model_id}  (pull: ollama pull {role.ollama_tag})")
+            if role.notes and "Ollama >= 0.14.3" in role.notes:
+                print(f"             note: {role.notes}")
+        print("Pull commands:")
+        for command in recommendation.pull_commands:
+            print(f"  {command}")
+        print("No models were pulled automatically.")
+        if args.apply:
+            if not args.yes:
+                answer = input(
+                    "Apply these local role mappings to personal.yaml/models.yaml? "
+                    "Type 'apply' to continue: "
+                )
+                if answer.strip().lower() != "apply":
+                    print("No changes made.")
+                    return
+            apply_local_model_pack(
+                personal_config_path=settings.personal_config_path,
+                models_config_path=settings.models_config_path,
+                recommendation=recommendation,
+            )
+            print("Updated local role mappings and enabled selected model profiles.")
+        return
+
     for model in build_service().models():
         enabled = "enabled" if model.provider_enabled and model.enabled else "disabled"
         scarce = "scarce" if model.scarce else "not scarce"
@@ -1227,6 +1273,8 @@ def doctor_command(args: argparse.Namespace) -> None:
     print(f"Performance mode: {config.local_runtime.performance_mode}")
     print(f"Max loaded models: {config.local_runtime.max_loaded_models}")
     print(f"Ollama keep_alive: {config.local_runtime.keep_alive}")
+    print("Local model recommendation: run `switchboard models --recommend`")
+    print("GLM 4.7 Flash requires Ollama >= 0.14.3.")
 
     ollama = config.providers.get("ollama")
     print(f"Ollama provider enabled: {bool(ollama and ollama.enabled)}")
@@ -1389,6 +1437,21 @@ def make_parser() -> argparse.ArgumentParser:
     ask.set_defaults(func=ask_command)
 
     models = subparsers.add_parser("models", help="List configured models")
+    models.add_argument(
+        "--recommend",
+        action="store_true",
+        help="Recommend an Ollama model pack for this machine",
+    )
+    models.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply the recommended local role mappings after confirmation",
+    )
+    models.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm --apply noninteractively",
+    )
     models.set_defaults(func=models_command)
 
     backends = subparsers.add_parser("backends", help="List Switchboard Core backends")
@@ -1493,7 +1556,7 @@ def make_parser() -> argparse.ArgumentParser:
         action="append",
         help="Run only the named conditions (default: all)",
     )
-    bench_quality.add_argument("--judge-model", help="Ollama judge model (default qwen3:8b)")
+    bench_quality.add_argument("--judge-model", help="Ollama judge model (default gemma4:12b)")
     bench_quality.add_argument("--timeout", type=int, default=120)
     bench_quality.add_argument("--json", action="store_true")
     bench_quality.add_argument("--output", help="Write the full JSON report to this file")

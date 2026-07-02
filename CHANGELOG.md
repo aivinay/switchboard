@@ -10,6 +10,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added `make sync-config` and a drift test so the packaged
   `switchboard/config/` tree remains canonical while the root `config/` tree
   stays available for development and Docker mounts.
+- Added the 2026 Ollama model pack, hardware-aware `switchboard models
+  --recommend`, and explicit local role mappings for general, coding, and
+  reasoning routes.
 
 ### Fixed
 - Made `switchboard route` previews honor private mode when Ollama is

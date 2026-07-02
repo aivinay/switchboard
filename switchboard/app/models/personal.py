@@ -59,6 +59,9 @@ class PersonalPreferences(BaseModel):
     semantic_memory_enabled: bool = False
     semantic_memory_top_k: int = 3
     embedding_model: str = "nomic-embed-text"
+    # Optional local model role mappings. Values are catalogue model IDs and
+    # are only honored when the model is enabled, local, and chat-selectable.
+    local_model_roles: dict[str, str] = Field(default_factory=dict)
     # Allow the Claude Code adapter to use its WebSearch tool (pre-approved via
     # --allowedTools). Off by default; uses your Claude subscription's search.
     claude_code_web_search: bool = False

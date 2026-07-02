@@ -1068,12 +1068,12 @@ def test_cli_route_uses_core_route_preview(monkeypatch, capsys) -> None:
             "Next step: switchboard ask --backend claude-code '<same prompt>'",
         ),
         (
-            "ollama/qwen3:8b",
+            "ollama/gemma4:12b",
             "ollama",
-            "ollama/qwen3:8b",
+            "ollama/gemma4:12b",
             (
                 "Next step: switchboard ask --backend ollama "
-                "--force-model ollama/qwen3:8b '<same prompt>'"
+                "--force-model ollama/gemma4:12b '<same prompt>'"
             ),
         ),
         (

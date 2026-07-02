@@ -3,8 +3,8 @@
 Use overrides when you disagree with the router or want to compare models.
 
 ```bash
-switchboard route "prompt" --force-model ollama/qwen3:8b
-switchboard ask "prompt" --force-model ollama/qwen2.5-coder:7b
+switchboard route "prompt" --force-model ollama/gemma4:12b
+switchboard ask "prompt" --force-model ollama/qwen3.5:9b
 switchboard route "prompt" --force-model claude-code
 switchboard ask "prompt" --force-model codex
 ```
@@ -24,7 +24,7 @@ Prompt bodies are not stored by default. Rerun/escalate therefore require the pr
 again unless prompt logging has been explicitly enabled.
 
 ```bash
-switchboard rerun <request_id> --model ollama/deepseek-r1:8b --prompt "..."
+switchboard rerun <request_id> --model ollama/gpt-oss:20b --prompt "..."
 switchboard escalate <request_id> --to manual/claude-web --prompt "..." --show-prompt
 ```
 

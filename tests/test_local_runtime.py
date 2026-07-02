@@ -26,7 +26,7 @@ def test_list_loaded_models_parses_ollama_ps(monkeypatch) -> None:
         returncode = 0
         stdout = (
             "NAME            ID              SIZE      PROCESSOR    UNTIL\n"
-            "qwen3:8b        abc123          5.2 GB    100% GPU     9 minutes\n"
+            "gemma4:12b      abc123          5.2 GB    100% GPU     9 minutes\n"
             "llama3.2:3b     def456          2.0 GB    100% GPU     9 minutes\n"
         )
 
@@ -34,7 +34,7 @@ def test_list_loaded_models_parses_ollama_ps(monkeypatch) -> None:
 
     loaded = OllamaRuntimeService(ollama_config()).list_loaded_models()
 
-    assert loaded == {"ollama/qwen3:8b", "ollama/llama3.2:3b"}
+    assert loaded == {"ollama/gemma4:12b", "ollama/llama3.2:3b"}
 
 
 def test_list_loaded_models_handles_unavailable_ollama(monkeypatch) -> None:
@@ -67,12 +67,12 @@ def test_warm_and_unload_model_use_ollama_generate_endpoint(monkeypatch) -> None
     monkeypatch.setattr(httpx, "post", fake_post)
 
     service = OllamaRuntimeService(ollama_config())
-    warm = service.warm_model("ollama/qwen3:8b")
-    unload = service.unload_model("ollama/qwen3:8b")
+    warm = service.warm_model("ollama/gemma4:12b")
+    unload = service.unload_model("ollama/gemma4:12b")
 
     assert warm.ok
     assert unload.ok
     assert calls[0]["url"] == "http://localhost:11434/api/generate"
-    assert calls[0]["json"]["model"] == "qwen3:8b"
+    assert calls[0]["json"]["model"] == "gemma4:12b"
     assert calls[0]["json"]["keep_alive"] == "10m"
     assert calls[1]["json"]["keep_alive"] == "0"

@@ -39,6 +39,13 @@ preferences:
   semantic_memory_enabled: true
   semantic_memory_top_k: 3
   embedding_model: "nomic-embed-text"
+  local_model_roles:
+    simple: "ollama/gemma4:e4b"
+    private_summary: "ollama/gemma4:12b"
+    general: "ollama/gemma4:12b"
+    coding: "ollama/qwen3.5:9b"
+    reasoning: "ollama/gpt-oss:20b"
+    complex_coding: "ollama/qwen3.5:9b"
   # Allow Claude Code to use its WebSearch tool for live-data questions
   # (pre-approved, uses your Claude subscription's search). Enabled in the
   # starter config; set false for local-only live-data fallback.

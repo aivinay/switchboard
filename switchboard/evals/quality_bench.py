@@ -136,7 +136,7 @@ class OllamaJudge:
         self,
         *,
         base_url: str = "http://localhost:11434",
-        model: str = "qwen3:8b",
+        model: str = "gemma4:12b",
         timeout_s: float = 120.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")

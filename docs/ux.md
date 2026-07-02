@@ -112,7 +112,7 @@ Feedback is attached to a request ID:
 ```bash
 switchboard feedback <request_id> --rating good
 switchboard feedback <request_id> --rating too-expensive
-switchboard feedback <request_id> --rating too-weak --preferred-model ollama/qwen3:8b
+switchboard feedback <request_id> --rating too-weak --preferred-model ollama/gemma4:12b
 ```
 
 Feedback is stored locally. Repeated weak local routes can nudge future matching requests

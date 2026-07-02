@@ -16,10 +16,11 @@ Personal routing is intentionally explicit and testable. The router recommends o
 
 ## Default Behaviour
 
-- Simple summarisation, classification, and extraction prefer `ollama/llama3.2:3b`.
-- General reasoning and planning prefer `ollama/qwen3:8b`.
-- Coding uses `ollama/qwen2.5-coder:7b` when possible.
-- Complex reasoning and architecture can use `ollama/deepseek-r1:8b` locally first.
+- Simple summarisation, classification, and extraction prefer `ollama/gemma4:e4b`,
+  with `ollama/llama3.2:3b` kept as the minimal fallback.
+- General reasoning and planning prefer `ollama/gemma4:12b`.
+- Coding uses `ollama/qwen3.5:9b` when possible.
+- Complex reasoning and architecture can use `ollama/gpt-oss:20b` locally first.
 - Manual premium tools can still be recommended, but are never called automatically.
 - Private or regulated content stays local by default.
 - Sensitivity controls where data can go; complexity controls model strength.
