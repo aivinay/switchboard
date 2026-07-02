@@ -78,6 +78,18 @@ def test_expanded_mock_eval_case_counts() -> None:
     assert len(cases_for_suite("session")) >= 10
 
 
+def test_real_time_smoke_case_expects_local_grounded_formatting() -> None:
+    case = next(
+        case
+        for case in cases_for_suite("real-smoke")
+        if case.case_id == "real_time_india"
+    )
+
+    assert case.expected_backend == "ollama"
+    assert case.expected_tool == "time"
+    assert case.required_backends == ("ollama",)
+
+
 def test_routing_eval_passes_with_mock_backends(tmp_path: Path) -> None:
     report = EvalRunner(settings=eval_settings(tmp_path)).run("routing")
 
