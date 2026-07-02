@@ -16,6 +16,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and a remote mutation guard for session updates and feedback retraction.
 - Added the web-UI Savings drawer with quota framing, local/tool/premium request mix,
   token-savings splits, 7-day trend segments, and feedback quality counts.
+- Added the web-UI session sidebar with session list/search, rename, soft-delete with
+  undo, first-run demo prompts, and the version/update footer pill.
 
 ### Fixed
 - Replaced the stale source-checkout `__version__` fallback with

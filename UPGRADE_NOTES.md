@@ -520,3 +520,37 @@ DoD evidence:
   counts, trend segment fields, static drawer placement outside `main.shell`, and
   drawer overlay wiring; full `make check` passed after the drawer phase.
 - Final branch check: `make check`, 728 tests collected, passed with 5 skips.
+
+## Track 3 - UI Shell
+
+Branch: `feat/ui-shell`
+
+Status: done.
+
+- Added `origin` and `deleted_at` to `ChatSessionRecord`, with SQLite migration hooks
+  beside the existing `private` session flag.
+- Added sidebar session APIs: `GET /api/sessions`, `GET /api/sessions/search`,
+  `DELETE /api/sessions/{session_id}`, and
+  `POST /api/sessions/{session_id}/undo-delete`.
+- Session list inclusion follows the design rule: UI sessions plus titled CLI sessions;
+  search spans all non-deleted sessions, including bare CLI one-shots.
+- Session list rows expose private lock state and backend summary (`local`, `premium`,
+  `mixed`, or `empty`) from a single aggregate query.
+- Search escapes `%`, `_`, and `\` for SQLite `LIKE ... ESCAPE`, and the frontend renders
+  titles/snippets with text nodes rather than raw stored HTML.
+- Delete tombstones sessions, hides them from list/search/history immediately, supports
+  Undo, and purges old tombstones with their messages on UI startup.
+- Added the two-column app shell, collapsible/overlay sidebar, grouped session list,
+  client-side title filtering plus debounced server search, inline rename, first-run
+  demo prompts, and sidebar version/update footer pill.
+
+DoD evidence:
+
+- Backend session contract: `tests/test_ui_api.py` covers origin/title inclusion,
+  backend summaries, LIKE escaping, CLI one-shot search, delete/undo hiding, purge
+  cascade, and remote mutation guard on session delete.
+- Frontend shell contract: static UI tests cover sidebar DOM, session/search/version
+  endpoints, safe snippet rendering via text nodes, drawer/sidebar overlay wiring,
+  and responsive shell CSS.
+- Validation: `node --check switchboard/app/static/app.js` passed.
+- Final branch check: `make check`, 732 tests collected, passed with 5 skips.
