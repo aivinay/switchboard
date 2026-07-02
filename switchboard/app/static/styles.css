@@ -28,6 +28,269 @@ body {
   overflow: hidden;
 }
 
+.app-shell {
+  height: 100dvh;
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+}
+
+.sidebar {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  gap: 12px;
+  border-right: 1px solid var(--line);
+  background: #ffffff;
+  padding: 14px 12px;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-new-chat {
+  flex: 1;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #14191f;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.sidebar-icon-button,
+.icon-only {
+  width: 36px;
+  height: 36px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #344054;
+  cursor: pointer;
+}
+
+.session-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  color: var(--muted);
+}
+
+.session-search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.session-list {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.session-group {
+  margin: 12px 4px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.session-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  border-radius: 8px;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+
+.session-row:hover,
+.session-row.active,
+.session-row:focus {
+  background: #eef2f7;
+  outline: 0;
+}
+
+.session-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.session-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.backend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #c7cdd8;
+}
+
+.backend-dot.local {
+  background: #12a150;
+}
+
+.backend-dot.premium {
+  background: #7c3aed;
+}
+
+.backend-dot.mixed {
+  width: 10px;
+  background: linear-gradient(90deg, #12a150 50%, #7c3aed 50%);
+}
+
+.session-lock {
+  font-size: 11px;
+}
+
+.session-actions {
+  grid-column: 1 / -1;
+  display: none;
+  gap: 6px;
+  padding-left: 18px;
+}
+
+.session-row:hover .session-actions,
+.session-row:focus-within .session-actions {
+  display: flex;
+}
+
+.session-actions button,
+.session-load-more,
+.version-pill,
+.session-toast button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #344054;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.session-snippet {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.25;
+}
+
+.session-snippet mark {
+  background: #fff2b8;
+  color: inherit;
+}
+
+.session-rename {
+  grid-column: 1 / -1;
+  width: 100%;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.sidebar-empty {
+  margin: 10px 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.sidebar-footer {
+  position: relative;
+  border-top: 1px solid #edf0f5;
+  padding-top: 10px;
+}
+
+.version-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#update-badge {
+  color: #067647;
+  font-weight: 700;
+}
+
+.version-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: min(230px, calc(100vw - 24px));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgb(16 24 40 / 16%);
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.version-popover[hidden],
+.sidebar-scrim[hidden],
+.session-toast[hidden] {
+  display: none;
+}
+
+.session-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transform: translateX(-50%);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgb(16 24 40 / 16%);
+  padding: 8px 10px 8px 14px;
+  font-size: 13px;
+}
+
+body.sidebar-collapsed .app-shell {
+  grid-template-columns: 58px minmax(0, 1fr);
+}
+
+body.sidebar-collapsed .sidebar {
+  padding: 14px 8px;
+}
+
+body.sidebar-collapsed .sidebar-new-chat,
+body.sidebar-collapsed .session-search,
+body.sidebar-collapsed .session-list,
+body.sidebar-collapsed .session-load-more,
+body.sidebar-collapsed .sidebar-footer {
+  display: none;
+}
+
 .shell {
   height: 100dvh;
   display: grid;
@@ -550,6 +813,36 @@ button {
   display: none;
 }
 
+.welcome-panel {
+  align-self: center;
+  width: min(680px, 100%);
+  display: grid;
+  gap: 8px;
+  margin: auto 0;
+}
+
+.welcome-panel h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.welcome-panel button {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.welcome-panel button:hover {
+  background: #eef2f7;
+}
+
 .message {
   max-width: min(760px, 92%);
   border-radius: 8px;
@@ -652,6 +945,42 @@ textarea {
 }
 
 @media (max-width: 640px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 22;
+    width: min(300px, 88vw);
+    transform: translateX(-100%);
+    transition: transform 140ms ease;
+  }
+
+  body.sidebar-open .sidebar {
+    transform: translateX(0);
+  }
+
+  .sidebar-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 21;
+    background: rgb(15 23 42 / 22%);
+  }
+
+  body.sidebar-collapsed .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  body.sidebar-collapsed .sidebar-new-chat,
+  body.sidebar-collapsed .session-search,
+  body.sidebar-collapsed .session-list,
+  body.sidebar-collapsed .session-load-more,
+  body.sidebar-collapsed .sidebar-footer {
+    display: flex;
+  }
+
   .shell {
     padding: 12px;
     gap: 10px;

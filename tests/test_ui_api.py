@@ -845,6 +845,13 @@ def test_ui_static_files_exist_and_call_chat_api(client: TestClient) -> None:
     assert "<h1>Switchboard</h1>" in html
     assert "Personal AI Switchboard" not in html
     assert "personal_ai_switchboard" not in html
+    assert 'id="sidebar"' in html
+    assert 'id="session-search"' in html
+    assert 'id="session-list"' in html
+    assert 'id="sidebar-new-chat"' in html
+    assert 'id="version-pill"' in html
+    assert 'id="version-popover"' in html
+    assert "Chats" in html
     assert 'id="model-menu"' in html
     assert 'id="model-lock-note"' in html
     assert 'id="dashboard-toggle"' in html
@@ -874,6 +881,7 @@ def test_ui_static_files_exist_and_call_chat_api(client: TestClient) -> None:
     state = state_js.read_text(encoding="utf-8")
     assert "window.SB" in state
     assert "switchboard.session_id" in state
+    assert "switchboard.sidebar_collapsed" in state
     assert "switchboard.private_chat" in state
     assert "openOverlayStack" in state
     assert "switchboard.feedback.enable_nudge_seen" in state
@@ -888,6 +896,13 @@ def test_ui_static_files_exist_and_call_chat_api(client: TestClient) -> None:
     assert "SB.dismissableStack.register" in javascript
     assert "/api/chat/stream" in javascript
     assert "/api/sessions/" in javascript
+    assert "/api/sessions?" in javascript
+    assert "/api/sessions/search" in javascript
+    assert "undo-delete" in javascript
+    assert "appendHighlightedSnippet" in javascript
+    assert "document.createTextNode" in javascript
+    assert "showWelcomeIfEmpty" in javascript
+    assert "loadVersionStatus" in javascript
     assert "PATCH" in javascript
     assert "private: privateChat" in javascript
     assert "Private chat forces Local" in html
@@ -951,6 +966,12 @@ def test_ui_layout_keeps_composer_stable() -> None:
     ).read_text(encoding="utf-8")
 
     assert "height: 100dvh;" in css
+    assert ".app-shell {" in css
+    assert "grid-template-columns: 264px minmax(0, 1fr);" in css
+    assert "body.sidebar-collapsed .app-shell" in css
+    assert ".sidebar {" in css
+    assert ".session-row" in css
+    assert ".sidebar-scrim" in css
     assert "grid-template-rows: auto minmax(0, 1fr) auto;" in css
     assert ".messages {" in css
     assert "overflow-y: auto;" in css

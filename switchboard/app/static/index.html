@@ -7,9 +7,40 @@
     <link rel="stylesheet" href="/ui/static/styles.css" />
   </head>
   <body>
-    <main class="shell">
-      <header class="topbar">
+    <div id="sidebar-scrim" class="sidebar-scrim" hidden></div>
+    <div class="app-shell">
+      <aside id="sidebar" class="sidebar" aria-label="Chats">
+        <div class="sidebar-header">
+          <button id="sidebar-new-chat" class="sidebar-new-chat" type="button">+ New chat</button>
+          <button id="sidebar-collapse" class="sidebar-icon-button" type="button" aria-label="Collapse sidebar">
+            ☰
+          </button>
+        </div>
+        <label class="session-search">
+          <span aria-hidden="true">⌕</span>
+          <input id="session-search" type="search" placeholder="Search" autocomplete="off" />
+        </label>
+        <div id="session-list" class="session-list"></div>
+        <button id="session-load-more" class="session-load-more" type="button" hidden>
+          Load more
+        </button>
+        <footer class="sidebar-footer">
+          <button id="version-pill" class="version-pill" type="button" aria-expanded="false">
+            <span id="ui-version">v...</span>
+            <span id="update-badge" hidden>Update</span>
+          </button>
+          <div id="version-popover" class="version-popover" hidden>
+            <span id="version-copy">Switchboard is up to date.</span>
+            <button id="copy-upgrade-command" class="copy-button" type="button" hidden>Copy</button>
+          </div>
+        </footer>
+      </aside>
+      <main class="shell">
+        <header class="topbar">
         <div class="topbar-left">
+          <button id="sidebar-toggle" class="topbar-button icon-only" type="button" aria-label="Open chats">
+            ☰
+          </button>
           <div class="model-picker">
             <button
               id="model-picker-button"
@@ -45,15 +76,12 @@
           <button id="dashboard-toggle" class="topbar-button" type="button" aria-expanded="false">
             Savings
           </button>
-          <button id="new-chat" class="topbar-button" type="button" title="Start a new chat">
-            + New chat
-          </button>
         </div>
-      </header>
+        </header>
 
-      <section id="messages" class="messages" aria-live="polite"></section>
+        <section id="messages" class="messages" aria-live="polite"></section>
 
-      <form id="chat-form" class="composer">
+        <form id="chat-form" class="composer">
         <textarea
           id="message"
           rows="1"
@@ -75,8 +103,10 @@
             <span aria-hidden="true">↑</span>
           </button>
         </div>
-      </form>
-    </main>
+        </form>
+      </main>
+    </div>
+    <div id="session-toast" class="session-toast" hidden></div>
     <div id="dashboard-scrim" class="dashboard-scrim" hidden></div>
     <aside id="dashboard" class="dashboard-drawer" aria-label="Savings" hidden>
       <div class="dashboard-header">

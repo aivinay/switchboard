@@ -15,6 +15,9 @@
       isSending: false,
       privateChat: window.localStorage.getItem(SB.storageKeys.privateChat) === "1",
     },
+    sidebar: {
+      collapsed: window.localStorage.getItem(SB.storageKeys.sidebarCollapsed) === "1",
+    },
     feedback: {
       enableNudgeShown:
         window.sessionStorage.getItem(SB.storageKeys.feedbackNudgeSeen) === "1",
