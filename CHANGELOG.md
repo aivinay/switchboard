@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Added `switchboard version`, global `switchboard --version`,
+  `switchboard upgrade [--check]`, and the opt-out daily PyPI update check.
+
+### Fixed
+- Replaced the stale source-checkout `__version__` fallback with
+  `pyproject.toml` discovery.
+
 ## [0.3.0] - 2026-07-02
 
 ### Added
