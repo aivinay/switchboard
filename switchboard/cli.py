@@ -55,6 +55,11 @@ from switchboard.app.services.switchboard_core import SwitchboardCoreService
 from switchboard.app.services.update_check import VersionStatus, refresh_update_status
 from switchboard.app.services.upgrade import UpgradePlan, detect_upgrade_plan
 from switchboard.app.storage.db import create_db_engine, init_db
+from switchboard.app.utils.remote import (
+    REMOTE_MUTATION_ENV,
+    host_is_loopback,
+    remote_mutations_allowed,
+)
 from switchboard.evals.quality_bench import (
     DEFAULT_CONDITIONS,
     OllamaJudge,
@@ -1468,6 +1473,19 @@ def ui_command(args: argparse.Namespace) -> None:
         print(f"Switchboard {status.latest} is available — run: switchboard upgrade", flush=True)
     url = f"http://{args.host}:{args.port}/ui"
     print(f"Switchboard UI running at {url}", flush=True)
+    if not host_is_loopback(args.host):
+        if remote_mutations_allowed():
+            print(
+                f"Warning: UI bound to {args.host}; remote mutations are enabled by "
+                f"{REMOTE_MUTATION_ENV}.",
+                flush=True,
+            )
+        else:
+            print(
+                f"Warning: UI bound to {args.host}; remote session/feedback mutations "
+                f"will return 403 unless {REMOTE_MUTATION_ENV}=1.",
+                flush=True,
+            )
     uvicorn.run(
         "switchboard.app.main:app",
         host=args.host,

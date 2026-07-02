@@ -10,7 +10,10 @@ const modelMenu = document.querySelector("#model-menu");
 const quotaMeters = document.querySelector("#quota-meters");
 const dashboard = document.querySelector("#dashboard");
 const dashboardToggle = document.querySelector("#dashboard-toggle");
-const privateMode = document.querySelector("#private-mode");
+const privacyFloor = document.querySelector("#privacy-floor");
+const privacyFloorPopover = document.querySelector("#privacy-floor-popover");
+const privateChatToggle = document.querySelector("#private-chat-toggle");
+const modelLockNote = document.querySelector("#model-lock-note");
 const newChatButton = document.querySelector("#new-chat");
 const metricPremiumAvoided = document.querySelector("#metric-premium-avoided");
 const metricTokensSaved = document.querySelector("#metric-tokens-saved");
@@ -32,6 +35,9 @@ let sessionId = appState.sessionId;
 let modelLabels = { auto: "Auto" };
 let modelOptions = [];
 let modelMenuOverlay = null;
+let privacyFloorOverlay = null;
+let modelBeforePrivate = currentModel === "ollama" ? "auto" : currentModel;
+let privateOffConfirmed = false;
 
 /* ------------------------------------------------------------------ */
 /* Minimal safe markdown renderer (local-first: no CDN dependencies). */
@@ -160,9 +166,13 @@ function rememberSession(nextSessionId) {
   if (!nextSessionId) {
     return;
   }
+  const changed = sessionId !== nextSessionId;
   sessionId = nextSessionId;
   appState.sessionId = nextSessionId;
   window.localStorage.setItem(sessionStorageKey, nextSessionId);
+  if (changed && appState.composer.privateChat) {
+    persistPrivateChat(true);
+  }
 }
 
 function scrollToBottom() {
@@ -213,7 +223,7 @@ function appendRoutingChips(meta, displayModel, routing) {
   if (routing.route_type) {
     chips.appendChild(makeChip(routing.route_type, "route"));
   }
-  if (routing.privacy_floor) {
+  if (routing.private_chat || routing.privacy_floor) {
     chips.appendChild(makeChip("Lock", "privacy"));
   }
   if (routing.tool_grounded) {
@@ -517,6 +527,7 @@ async function loadHistory() {
       return;
     }
     const payload = await response.json();
+    applyPrivateChatState(Boolean(payload.private));
     for (const message of payload.messages || []) {
       if (message.role === "user") {
         addMessage(message.content, "user");
@@ -541,9 +552,61 @@ async function loadHistory() {
   }
 }
 
+function cachePrivateChat(enabled) {
+  if (enabled) {
+    window.localStorage.setItem(SB.storageKeys.privateChat, "1");
+  } else {
+    window.localStorage.removeItem(SB.storageKeys.privateChat);
+  }
+}
+
+async function persistPrivateChat(enabled) {
+  if (!sessionId) {
+    return;
+  }
+  try {
+    await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ private: enabled }),
+    });
+  } catch {
+    /* Private-chat persistence is retried after the next successful send. */
+  }
+}
+
+function applyPrivateChatState(enabled, options = {}) {
+  const shouldPersist = options.persist || false;
+  const restoreModel = options.restoreModel || false;
+  appState.composer.privateChat = enabled;
+  cachePrivateChat(enabled);
+  if (privateChatToggle) {
+    privateChatToggle.setAttribute("aria-pressed", String(enabled));
+  }
+  form.classList.toggle("private-chat-on", enabled);
+  modelButton.classList.toggle("locked", enabled);
+  modelButton.setAttribute("aria-disabled", String(enabled));
+  if (modelLockNote) {
+    modelLockNote.hidden = !enabled;
+  }
+  if (enabled) {
+    if (currentModel !== "ollama") {
+      modelBeforePrivate = currentModel;
+    }
+    chooseModel("ollama");
+  } else if (restoreModel) {
+    chooseModel(modelBeforePrivate || "auto");
+  }
+  if (shouldPersist) {
+    persistPrivateChat(enabled);
+  }
+}
+
 function startNewChat() {
   sessionId = null;
   appState.sessionId = null;
+  privateOffConfirmed = false;
+  applyPrivateChatState(false, { restoreModel: true });
   window.localStorage.removeItem(sessionStorageKey);
   messages.textContent = "";
   input.focus();
@@ -727,12 +790,14 @@ async function sendMessage() {
   updateSendState();
   const pending = addMessage("Thinking...", "pending");
   const state = { raw: "", bodyEl: null, displayModel: null, routing: null, failed: false };
+  const privateChat = appState.composer.privateChat;
+  const backend = privateChat ? "ollama" : currentModel;
 
   try {
     const response = await fetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, backend: currentModel, session_id: sessionId }),
+      body: JSON.stringify({ message, backend, session_id: sessionId, private: privateChat }),
     });
     if (!response.ok) {
       const payload = await response.json();
@@ -844,15 +909,21 @@ async function loadBackendStatus() {
     }
     const payload = await response.json();
     renderModelOptions(payload.options || fallbackModelOptions);
-    if (privateMode) {
-      privateMode.hidden = !payload.private_mode;
+    if (appState.composer.privateChat) {
+      applyPrivateChatState(true);
     }
   } catch {
     renderModelOptions(fallbackModelOptions);
+    if (appState.composer.privateChat) {
+      applyPrivateChatState(true);
+    }
   }
 }
 
 function chooseModel(value) {
+  if (appState.composer.privateChat && value !== "ollama") {
+    return;
+  }
   currentModel = value;
   appState.currentModel = value;
   selectedModel.textContent = modelLabels[value] || value;
@@ -873,7 +944,43 @@ function updateSendState() {
   send.disabled = isSending || input.value.trim().length === 0;
 }
 
+function setPrivacyFloorOpen(open, fromStack = false) {
+  if (!privacyFloor || !privacyFloorPopover) {
+    return;
+  }
+  privacyFloorPopover.hidden = !open;
+  privacyFloor.setAttribute("aria-expanded", String(open));
+  if (!privacyFloorOverlay || fromStack) {
+    return;
+  }
+  if (open) {
+    SB.dismissableStack.open(privacyFloorOverlay);
+  } else {
+    SB.dismissableStack.remove(privacyFloorOverlay);
+  }
+}
+
+function togglePrivateChat() {
+  if (appState.composer.privateChat) {
+    if (
+      !privateOffConfirmed &&
+      !window.confirm(
+        "Earlier messages in this chat may be included as context for premium backends from now on. Continue?"
+      )
+    ) {
+      return;
+    }
+    privateOffConfirmed = true;
+    applyPrivateChatState(false, { persist: true, restoreModel: true });
+    return;
+  }
+  applyPrivateChatState(true, { persist: true });
+}
+
 modelButton.addEventListener("click", () => {
+  if (appState.composer.privateChat) {
+    return;
+  }
   setMenuOpen(modelMenu.hidden);
 });
 
@@ -883,6 +990,22 @@ modelMenuOverlay = SB.dismissableStack.register({
   trigger: modelButton,
   close: () => setMenuOpenFromStack(false, true),
 });
+
+if (privacyFloor && privacyFloorPopover) {
+  privacyFloorOverlay = SB.dismissableStack.register({
+    id: "privacy-floor",
+    element: privacyFloorPopover,
+    trigger: privacyFloor,
+    close: () => setPrivacyFloorOpen(false, true),
+  });
+  privacyFloor.addEventListener("click", () => {
+    setPrivacyFloorOpen(privacyFloorPopover.hidden);
+  });
+}
+
+if (privateChatToggle) {
+  privateChatToggle.addEventListener("click", togglePrivateChat);
+}
 
 if (dashboardToggle) {
   dashboardToggle.addEventListener("click", toggleDashboard);
@@ -909,6 +1032,7 @@ input.addEventListener("keydown", (event) => {
 });
 
 renderModelOptions(fallbackModelOptions);
+applyPrivateChatState(appState.composer.privateChat);
 resizeInput();
 updateSendState();
 loadBackendStatus();

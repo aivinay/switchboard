@@ -25,6 +25,12 @@ Bare `switchboard ask` uses the same stateful core path as `switchboard ask --ba
 That path carries context across Ollama, Codex, Claude Code, and tools. The web UI uses
 it automatically:
 
+In the web UI, Private chat forces Ollama for every message in the current session and
+persists that flag server-side. Turning it off confirms that earlier messages in the
+chat may be included as context for premium backends from then on. The UI is
+unauthenticated; keep `switchboard ui` on loopback unless you intentionally allow remote
+access.
+
 ```bash
 switchboard ask "Summarise this customer email in three bullets."
 switchboard ask --backend auto --new-session "Remember: use local models for private notes."

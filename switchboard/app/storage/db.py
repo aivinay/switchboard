@@ -58,6 +58,14 @@ def _migrate_sqlite(engine: Engine) -> None:
                 "preferred_model": "VARCHAR",
             },
         )
+    if "chatsessionrecord" in tables:
+        _add_missing_columns(
+            engine,
+            "chatsessionrecord",
+            {
+                "private": "BOOLEAN DEFAULT 0",
+            },
+        )
 
 
 def _add_missing_columns(engine: Engine, table_name: str, columns: dict[str, str]) -> None:

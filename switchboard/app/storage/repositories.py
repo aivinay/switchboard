@@ -138,6 +138,7 @@ def chat_session_to_read(record: ChatSessionRecord) -> ChatSessionRead:
         session_id=record.session_id,
         title=record.title,
         summary=record.summary,
+        private=record.private,
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
@@ -645,6 +646,7 @@ class ContextStore:
         *,
         session_id: str | None = None,
         title: str | None = None,
+        private: bool = False,
     ) -> ChatSessionRead:
         with Session(self.engine) as session:
             existing = None
@@ -655,6 +657,7 @@ class ContextStore:
             record = ChatSessionRecord(
                 session_id=session_id or new_request_id("session"),
                 title=title,
+                private=private,
             )
             session.add(record)
             session.commit()
@@ -665,6 +668,27 @@ class ContextStore:
         with Session(self.engine) as session:
             record = session.get(ChatSessionRecord, session_id)
             return chat_session_to_read(record) if record else None
+
+    def update_session(
+        self,
+        session_id: str,
+        *,
+        title: str | None = None,
+        private: bool | None = None,
+    ) -> ChatSessionRead | None:
+        with Session(self.engine) as session:
+            record = session.get(ChatSessionRecord, session_id)
+            if record is None:
+                return None
+            if title is not None:
+                record.title = title
+            if private is not None:
+                record.private = private
+            record.updated_at = utc_now()
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return chat_session_to_read(record)
 
     def append_message(
         self,

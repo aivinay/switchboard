@@ -4,6 +4,7 @@
   SB.storageKeys = {
     sessionId: "switchboard.session_id",
     sidebarCollapsed: "switchboard.sidebar_collapsed",
+    privateChat: "switchboard.private_chat",
     feedbackNudgeSeen: "switchboard.feedback.enable_nudge_seen",
   };
 
@@ -12,7 +13,7 @@
     currentModel: "auto",
     composer: {
       isSending: false,
-      privateChat: false,
+      privateChat: window.localStorage.getItem(SB.storageKeys.privateChat) === "1",
     },
     feedback: {
       enableNudgeShown:

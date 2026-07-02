@@ -55,6 +55,10 @@ body {
   min-width: 0;
 }
 
+.topbar-left {
+  position: relative;
+}
+
 .topbar-actions {
   justify-self: end;
 }
@@ -98,6 +102,25 @@ button {
 .model-picker-button[aria-expanded="true"] {
   border-color: #b8c1d1;
   background: #fbfcfe;
+}
+
+.model-picker-button.locked {
+  cursor: default;
+  border-color: #9ec5b1;
+  color: #475467;
+  background: #f5fbf7;
+}
+
+.model-lock-note {
+  display: block;
+  margin-top: 4px;
+  color: #067647;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.model-lock-note[hidden] {
+  display: none;
 }
 
 .chevron {
@@ -221,6 +244,48 @@ button {
 
 .quota-bar span.constrained {
   background: #d92d20;
+}
+
+.privacy-floor {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #667085;
+  padding: 0 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.privacy-floor:hover,
+.privacy-floor[aria-expanded="true"] {
+  color: #344054;
+  background: rgba(127, 127, 127, 0.08);
+}
+
+.privacy-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 6;
+  width: min(360px, calc(100vw - 36px));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 10px 12px;
+  box-shadow:
+    0 14px 32px rgb(16 24 40 / 16%),
+    0 2px 6px rgb(16 24 40 / 8%);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.privacy-popover[hidden] {
+  display: none;
 }
 
 .dashboard {
@@ -351,6 +416,13 @@ button {
   border-radius: 24px;
   padding: 12px;
   box-shadow: 0 -2px 10px rgb(16 24 40 / 4%);
+}
+
+.composer.private-chat-on {
+  border-color: #69b88f;
+  box-shadow:
+    0 0 0 3px rgb(105 184 143 / 14%),
+    0 -2px 10px rgb(16 24 40 / 4%);
 }
 
 .composer-footer {
@@ -725,8 +797,23 @@ textarea {
   padding: 0;
 }
 
-.private-mode {
-  color: #067647;
+.private-chat-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid #cfd6e3;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #475467;
+  padding: 0 11px;
   font-size: 12px;
   font-weight: 650;
+  cursor: pointer;
+}
+
+.private-chat-toggle[aria-pressed="true"] {
+  border-color: #69b88f;
+  color: #067647;
+  background: #f5fbf7;
 }

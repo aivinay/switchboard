@@ -8,13 +8,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TypedDict
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from switchboard import __version__
 from switchboard.app.models.backends import SwitchboardResponse, backend_display_name
 from switchboard.app.models.personal import FeedbackCreate, FeedbackRead
+from switchboard.app.models.sessions import ChatSessionRead
 from switchboard.app.services.container import ServiceContainer
 from switchboard.app.services.core_factory import build_configured_core_service
 from switchboard.app.services.local_runtime import OllamaRuntimeService
@@ -22,6 +23,11 @@ from switchboard.app.services.personal_switchboard import PersonalSwitchboardSer
 from switchboard.app.services.quota import PREMIUM_BACKENDS, QuotaLedgerService
 from switchboard.app.services.switchboard_core import SwitchboardCoreService
 from switchboard.app.services.update_check import cached_version_status
+from switchboard.app.utils.remote import (
+    REMOTE_MUTATION_ENV,
+    host_is_loopback,
+    remote_mutations_allowed,
+)
 
 router = APIRouter(tags=["ui"])
 
@@ -40,12 +46,17 @@ UI_VALUE_BY_BACKEND = {
 
 HTTP_DISABLED_CLI_BACKENDS = {"codex", "claude-code"}
 TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
+REMOTE_MUTATION_DETAIL = (
+    "Remote UI mutations are disabled unless "
+    f"{REMOTE_MUTATION_ENV}=1 is set for this server."
+)
 
 
 class UiChatRequest(BaseModel):
     message: str = Field(min_length=1)
     backend: str = "auto"
     session_id: str | None = None
+    private: bool = False
 
 
 class UiChatResponse(BaseModel):
@@ -70,6 +81,7 @@ class UiHistoryMessage(BaseModel):
 
 class UiHistoryResponse(BaseModel):
     session_id: str
+    private: bool = False
     messages: list[UiHistoryMessage]
 
 
@@ -86,11 +98,29 @@ class UiFeedbackPendingResponse(BaseModel):
     pending: int
 
 
+class UiSessionPatchRequest(BaseModel):
+    title: str | None = None
+    private: bool | None = None
+
+
 class FeedbackAckPayload(TypedDict):
     pending_corrections: int
     ack_message: str
     copy_command: str | None
     nudge_enable_examples: bool
+
+
+def request_host(request: Request) -> str | None:
+    return request.client.host if request.client is not None else None
+
+
+def require_local_mutation(request: Request) -> None:
+    if host_is_loopback(request_host(request)) or remote_mutations_allowed():
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={"message": REMOTE_MUTATION_DETAIL},
+    )
 
 
 def core_service(request: Request) -> SwitchboardCoreService:
@@ -150,6 +180,7 @@ def routing_chip_metadata(metadata: dict[str, object]) -> dict[str, object]:
     percent = compression_percent(metadata)
     payload: dict[str, object] = {
         "route_type": str(metadata.get("route_type") or ""),
+        "private_chat": bool(metadata.get("private_chat")),
         "privacy_floor": bool(
             metadata.get("private_mode_rerouted")
             or metadata.get("private_mode_would_block")
@@ -231,6 +262,13 @@ def ask_switchboard(
     request: Request,
 ) -> SwitchboardResponse:
     message, selected_backend = validated_message_and_backend(payload)
+    container: ServiceContainer = request.app.state.container
+    stored_session = (
+        container.context_store.get_session(payload.session_id) if payload.session_id else None
+    )
+    private_chat = payload.private or bool(stored_session and stored_session.private)
+    if private_chat:
+        selected_backend = "ollama"
     forced_backend = BACKEND_BY_UI_VALUE[selected_backend]
     if forced_backend in HTTP_DISABLED_CLI_BACKENDS and not http_cli_backends_enabled():
         raise HTTPException(
@@ -247,9 +285,15 @@ def ask_switchboard(
         message,
         backend=forced_backend,
         project="ui",
-        metadata={"surface": "ui", "requested_backend": selected_backend},
+        metadata={
+            "surface": "ui",
+            "requested_backend": payload.backend.strip().lower(),
+            "private_chat": private_chat,
+        },
         session_id=payload.session_id,
     )
+    if private_chat and response.session_id:
+        container.context_store.update_session(response.session_id, private=True)
     return response
 
 
@@ -381,7 +425,31 @@ def chat_history(session_id: str, request: Request) -> UiHistoryResponse:
                 created_at=record.created_at.isoformat(),
             )
         )
-    return UiHistoryResponse(session_id=session_id, messages=messages)
+    return UiHistoryResponse(session_id=session_id, private=session.private, messages=messages)
+
+
+@router.patch(
+    "/api/sessions/{session_id}",
+    response_model=ChatSessionRead,
+    dependencies=[Depends(require_local_mutation)],
+)
+def update_ui_session(
+    session_id: str,
+    payload: UiSessionPatchRequest,
+    request: Request,
+) -> ChatSessionRead:
+    container: ServiceContainer = request.app.state.container
+    updated = container.context_store.update_session(
+        session_id,
+        title=payload.title,
+        private=payload.private,
+    )
+    if updated is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Unknown session."},
+        )
+    return updated
 
 
 @router.get("/api/backends/status")
@@ -618,7 +686,10 @@ def chat_feedback(payload: UiFeedbackRequest, request: Request) -> FeedbackRead:
     return result
 
 
-@router.delete("/api/chat/feedback/{request_id}")
+@router.delete(
+    "/api/chat/feedback/{request_id}",
+    dependencies=[Depends(require_local_mutation)],
+)
 def delete_chat_feedback(request_id: str, request: Request) -> dict[str, object]:
     container: ServiceContainer = request.app.state.container
     deleted = container.personal_telemetry_repository.delete_feedback(request_id.strip())

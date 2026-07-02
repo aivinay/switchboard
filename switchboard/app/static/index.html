@@ -21,9 +21,24 @@
               <span id="selected-model">Auto</span>
               <span class="chevron" aria-hidden="true">⌄</span>
             </button>
+            <span id="model-lock-note" class="model-lock-note" hidden>Private chat forces Local</span>
             <div id="model-menu" class="model-menu" role="listbox" aria-label="Model" hidden></div>
           </div>
           <div id="quota-meters" class="quota-meters" hidden></div>
+          <button
+            id="privacy-floor"
+            class="privacy-floor"
+            type="button"
+            aria-expanded="false"
+            aria-describedby="privacy-floor-popover"
+          >
+            <span aria-hidden="true">🛡</span>
+            <span>Privacy floor: always on</span>
+          </button>
+          <div id="privacy-floor-popover" class="privacy-popover" hidden>
+            Prompts containing personal or secret content never leave this machine, even when
+            premium backends are selected. This cannot be turned off.
+          </div>
         </div>
         <h1>Switchboard</h1>
         <div class="topbar-actions">
@@ -66,7 +81,15 @@
           aria-label="Message"
         ></textarea>
         <div class="composer-footer">
-          <span id="private-mode" class="private-mode" hidden>Lock Private</span>
+          <button
+            id="private-chat-toggle"
+            class="private-chat-toggle"
+            type="button"
+            aria-pressed="false"
+          >
+            <span aria-hidden="true">🔒</span>
+            <span>Private chat</span>
+          </button>
           <button id="send" class="send-button" type="submit" aria-label="Send message" disabled>
             <span aria-hidden="true">↑</span>
           </button>

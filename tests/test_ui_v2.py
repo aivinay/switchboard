@@ -111,7 +111,7 @@ def test_history_returns_past_turns_with_request_ids(
 def test_history_for_unknown_session_is_empty(client: TestClient) -> None:
     response = client.get("/api/chat/history", params={"session_id": "session_nope"})
     assert response.status_code == 200
-    assert response.json() == {"session_id": "session_nope", "messages": []}
+    assert response.json() == {"session_id": "session_nope", "private": False, "messages": []}
 
 
 def test_feedback_endpoint_records_rating(client: TestClient, fake_backends: None) -> None:
