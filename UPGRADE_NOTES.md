@@ -282,11 +282,26 @@ Tests:
 | Privacy invariant with Ollama up | `switchboard route "my ssn is 123-45-6789, summarize this medical record" --debug`; `switchboard ask --backend auto --show-metadata --timeout 120 ...` | Route preview selected Ollama with the private-mode sensitive-content reason. The live answer came from `ollama/llama3.2:3b`, cost type `local`, with no premium escalation. |
 | Live answer-confidence escalation | Temporarily set `escalation_enabled: true`; ran `switchboard route ... --debug`; `switchboard ask --backend auto --show-metadata --timeout 180 "Please answer carefully: how should projection lag interact with deletion semantics in a stateful notes app?"` | The prompt routed locally first. The confidence check scored the local answer at 0.20 below the 0.55 threshold and escalated once to `claude-code` with the documented routing reason. |
 | Sensitive low-confidence behavior | Temporarily set `escalation_enabled: true` and `escalation_confidence_threshold: 1.01`; ran `switchboard ask --backend auto --show-metadata --timeout 180 "my ssn is 123-45-6789, summarize this medical record and explain any uncertainty carefully"` | The response stayed on `ollama/llama3.2:3b`, appended the honest local-confidence note, and recorded that private mode blocked premium escalation. Escalation settings were reverted and synced. |
-| Arch-Router optional validation | Not run | Skipped pending explicit approval because `hf.co/katanemo/Arch-Router-1.5B.gguf` is over 1 GB. |
+| Arch-Router validation | `ollama pull hf.co/katanemo/Arch-Router-1.5B.gguf`; temporary `router_mode: "rules"` and `router_mode: "hybrid"` + `router_llm_model: "hf.co/katanemo/Arch-Router-1.5B.gguf"`; `switchboard route ... --debug` on 10 prompts | Pull succeeded (986 MB). Rules and hybrid agreed on 10/10 varied prompts, with rules wall-clock route previews from 625-1750 ms and hybrid from 603-1245 ms. A direct unknown-prompt probe initially exposed that the live Arch-Router model returns Python-style policy outputs; fixed parser compatibility and reran the probe successfully: `LLM router (hf.co/katanemo/Arch-Router-1.5B.gguf) classified this as a local task (confidence 1.00)`. Config was reverted and synced. |
 | Real smoke suite | `switchboard eval-real-smoke --fast --timeout 180` | First run found one stale eval expectation: `real_time_india` expected Claude Code but deterministic time-tool formatting correctly used Ollama. Fixed the fixture with a regression test, then reran: 11/11 passed, 0 failed, 0 timed out, 0 skipped, 0 not verified. |
 | Real provider suite | `switchboard eval-real-providers --timeout 180` | 3/5 passed with configured providers; `provider_web_brave` and `provider_web_grounding` were not verified because the direct web provider is not configured. |
-| Headroom optional validation | Not run | Skipped pending explicit approval because it installs the optional `switchboard-local[headroom]` extra into the venv. |
+| Headroom validation | `pip install -e ".[dev,headroom]"`; temporary `compression_engine: "headroom"`; multi-turn `switchboard ask --backend ollama --session ... --memory --show-metadata`; `switchboard metrics --last 1 --format json` | Extra installed successfully (`headroom-ai` 0.28.0). Below-threshold runs reported `compression_engine: headroom` with no compression. The long-context run crossed the threshold (`context_compression_original_tokens: 1226`) and Headroom returned an unsupported result, so Switchboard failed closed to the heuristic compressor with `headroom_fallback_reason: TypeError: headroom compress() returned unsupported result`, `context_compression_scope: history_only`, `context_compression_tokens_saved: 148`, and a successful Ollama answer grounded by the time tool plus retrieved semantic memory. Config was reverted and synced. |
 | UI validation | `switchboard ui --host 127.0.0.1 --port 8765`; `curl http://127.0.0.1:8765/ui`; `curl http://127.0.0.1:8765/api/backends/status`; `curl -X POST http://127.0.0.1:8765/api/chat ...`; `curl http://127.0.0.1:8765/api/dashboard` | `/ui` rendered over GET. The dynamic picker reported Auto and Ollama available, Codex and Claude gated by HTTP CLI opt-in, and hot local models populated. A forced Ollama UI chat returned `OK.` from backend `ollama`. Dashboard totals populated from real backend metrics. Server was stopped after validation. |
+
+### Arch-Router Agreement Table
+
+| Prompt | Rules | Hybrid + Arch-Router | Agreement | Latency |
+| --- | --- | --- | --- | --- |
+| `Time in India` | Ollama / local | Ollama / local | yes | rules 1750 ms, hybrid 758 ms |
+| `Weather in Dubai` | Claude Code / reasoning | Claude Code / reasoning | yes | rules 627 ms, hybrid 604 ms |
+| `what is 234 * 78?` | Ollama / local | Ollama / local | yes | rules 740 ms, hybrid 726 ms |
+| `Remember: prefer local models for private notes.` | Ollama / local | Ollama / local | yes | rules 637 ms, hybrid 627 ms |
+| `my ssn is 123-45-6789, summarize this medical record` | Ollama / local | Ollama / local | yes | rules 752 ms, hybrid 746 ms |
+| `Debug this failing Python pytest traceback` | Codex / coding | Codex / coding | yes | rules 635 ms, hybrid 608 ms |
+| `review this SQL migration for pitfalls` | Codex / coding | Codex / coding | yes | rules 625 ms, hybrid 621 ms |
+| `Design a rollout plan for migrating a monolith to event sourcing` | Claude Code / reasoning | Claude Code / reasoning | yes | rules 624 ms, hybrid 603 ms |
+| `Summarize these meeting notes in three bullets` | Ollama / local | Ollama / local | yes | rules 685 ms, hybrid 658 ms |
+| `Latest OpenAI news` | Ollama / local | Ollama / local | yes | rules 1207 ms, hybrid 1245 ms |
 
 ## Manual Follow-Ups
 
