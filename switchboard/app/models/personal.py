@@ -27,6 +27,7 @@ class PersonalPreferences(BaseModel):
     compress_long_context_before_premium_recommendation: bool = True
     cache_routing: bool = True
     cache_answers: bool = False
+    update_check_enabled: bool = True
     # Switchboard Core router mode: "rules" (Phase A deterministic), "llm"
     # (local LLM router with rules fallback), "hybrid" (rules first, LLM only
     # for ambiguous prompts), or "learned" (trained embedding classifier with
