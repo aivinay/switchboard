@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -297,6 +298,131 @@ def test_ui_remote_mutation_guard_blocks_feedback_retraction(
     )
 
     response = remote_client.delete("/api/chat/feedback/request_123")
+
+    assert response.status_code == 403
+    assert "Remote UI mutations" in response.json()["detail"]["message"]
+
+
+def test_ui_sessions_list_respects_origin_title_and_backend_summary(
+    client: TestClient,
+) -> None:
+    store = client.app.state.container.context_store
+    ui_session = store.create_session(origin="ui", private=True)
+    store.append_message(
+        session_id=ui_session.session_id,
+        role="user",
+        content="Login page bug with a very long title candidate that needs truncation",
+    )
+    store.append_message(
+        session_id=ui_session.session_id,
+        role="assistant",
+        content="local answer",
+        backend="ollama",
+    )
+    titled_cli = store.create_session(origin="cli", title="CLI design review")
+    store.append_message(
+        session_id=titled_cli.session_id,
+        role="assistant",
+        content="premium answer",
+        backend="codex",
+    )
+    bare_cli = store.create_session(origin="cli")
+    store.append_message(
+        session_id=bare_cli.session_id,
+        role="user",
+        content="bare cli one shot",
+    )
+
+    response = client.get("/api/sessions")
+
+    assert response.status_code == 200
+    sessions = {item["session_id"]: item for item in response.json()["sessions"]}
+    assert ui_session.session_id in sessions
+    assert titled_cli.session_id in sessions
+    assert bare_cli.session_id not in sessions
+    assert sessions[ui_session.session_id]["private"] is True
+    assert sessions[ui_session.session_id]["backend_summary"] == "local"
+    assert sessions[titled_cli.session_id]["backend_summary"] == "premium"
+    assert sessions[titled_cli.session_id]["title"] == "CLI design review"
+    assert sessions[ui_session.session_id]["title"].endswith("...")
+
+
+def test_ui_sessions_search_escapes_like_and_includes_cli_one_shots(
+    client: TestClient,
+) -> None:
+    store = client.app.state.container.context_store
+    literal = store.create_session(origin="ui", title="Budget is exactly 100% done")
+    wildcard_decoy = store.create_session(origin="ui", title="Budget is exactly 1000 done")
+    bare_cli = store.create_session(origin="cli")
+    store.append_message(
+        session_id=bare_cli.session_id,
+        role="user",
+        content="Private search phrase from a CLI one-shot",
+    )
+    store.append_message(
+        session_id=literal.session_id,
+        role="user",
+        content="literal percent",
+    )
+    store.append_message(
+        session_id=wildcard_decoy.session_id,
+        role="user",
+        content="decoy",
+    )
+
+    percent = client.get("/api/sessions/search", params={"q": "100%"})
+    cli = client.get("/api/sessions/search", params={"q": "search phrase"})
+
+    assert percent.status_code == 200
+    percent_ids = {item["session_id"] for item in percent.json()["results"]}
+    assert literal.session_id in percent_ids
+    assert wildcard_decoy.session_id not in percent_ids
+    assert cli.status_code == 200
+    assert cli.json()["results"][0]["session_id"] == bare_cli.session_id
+    assert "search phrase" in cli.json()["results"][0]["snippet"].lower()
+
+
+def test_ui_session_delete_hides_content_until_undo_and_purge_cascades(
+    client: TestClient,
+) -> None:
+    store = client.app.state.container.context_store
+    session = store.create_session(origin="ui", title="Disposable")
+    store.append_message(session_id=session.session_id, role="user", content="delete me")
+
+    deleted = client.delete(f"/api/sessions/{session.session_id}")
+
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True
+    assert client.get("/api/sessions").json()["sessions"] == []
+    history = client.get("/api/chat/history", params={"session_id": session.session_id})
+    assert history.json() == {"session_id": session.session_id, "private": False, "messages": []}
+    assert client.get("/api/sessions/search", params={"q": "delete"}).json()["results"] == []
+
+    undo = client.post(f"/api/sessions/{session.session_id}/undo-delete")
+
+    assert undo.status_code == 200
+    assert undo.json()["deleted_at"] is None
+    assert client.get("/api/sessions").json()["sessions"][0]["session_id"] == session.session_id
+
+    client.delete(f"/api/sessions/{session.session_id}")
+    purged = store.purge_deleted_sessions(before=datetime.now(UTC) + timedelta(seconds=11))
+
+    assert purged == 1
+    assert store.list_messages(session.session_id) == []
+
+
+def test_ui_remote_mutation_guard_blocks_session_delete(
+    test_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SWITCHBOARD_ALLOW_REMOTE_MUTATIONS", raising=False)
+    remote_client = TestClient(
+        create_app(test_settings),
+        client=("203.0.113.10", 50000),
+    )
+    session = remote_client.app.state.container.context_store.create_session(origin="ui")
+
+    response = remote_client.delete(f"/api/sessions/{session.session_id}")
 
     assert response.status_code == 403
     assert "Remote UI mutations" in response.json()["detail"]["message"]

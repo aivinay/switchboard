@@ -64,6 +64,8 @@ def _migrate_sqlite(engine: Engine) -> None:
             "chatsessionrecord",
             {
                 "private": "BOOLEAN DEFAULT 0",
+                "origin": "VARCHAR",
+                "deleted_at": "DATETIME",
             },
         )
 

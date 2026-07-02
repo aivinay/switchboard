@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, col, desc, select
 
@@ -13,8 +14,10 @@ from switchboard.app.models.personal import FeedbackRead, PersonalMemoryRead
 from switchboard.app.models.sessions import (
     ChatMessageRead,
     ChatMessageRecord,
+    ChatSessionListItem,
     ChatSessionRead,
     ChatSessionRecord,
+    ChatSessionSearchResult,
 )
 from switchboard.app.models.telemetry import (
     BackendMetricRead,
@@ -139,6 +142,8 @@ def chat_session_to_read(record: ChatSessionRecord) -> ChatSessionRead:
         title=record.title,
         summary=record.summary,
         private=record.private,
+        origin=record.origin,
+        deleted_at=record.deleted_at,
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
@@ -156,6 +161,49 @@ def chat_message_to_read(record: ChatMessageRecord) -> ChatMessageRead:
         metadata=json.loads(record.metadata_json or "{}"),
         created_at=record.created_at,
     )
+
+
+def _as_datetime(value: object) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        return datetime.fromisoformat(value)
+    return utc_now()
+
+
+def _display_title(stored_title: object, first_user_message: object) -> str:
+    raw_title = str(stored_title or first_user_message or "New chat").strip()
+    if len(raw_title) <= 40:
+        return raw_title
+    return raw_title[:39].rstrip() + "..."
+
+
+def _backend_summary(local_count: int, premium_count: int) -> str:
+    if local_count > 0 and premium_count > 0:
+        return "mixed"
+    if premium_count > 0:
+        return "premium"
+    if local_count > 0:
+        return "local"
+    return "empty"
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _snippet_around(text_value: object, query: str, radius: int = 40) -> str:
+    text_content = str(text_value or "").strip()
+    if not text_content:
+        return ""
+    index = text_content.lower().find(query.lower())
+    if index < 0:
+        return text_content[: radius * 2].rstrip()
+    start = max(0, index - radius)
+    end = min(len(text_content), index + len(query) + radius)
+    prefix = "..." if start > 0 else ""
+    suffix = "..." if end < len(text_content) else ""
+    return f"{prefix}{text_content[start:end].strip()}{suffix}"
 
 
 def memory_to_read(record: MemoryItem) -> PersonalMemoryRead:
@@ -649,17 +697,21 @@ class ContextStore:
         session_id: str | None = None,
         title: str | None = None,
         private: bool = False,
+        origin: str | None = None,
     ) -> ChatSessionRead:
         with Session(self.engine) as session:
             existing = None
             if session_id:
                 existing = session.get(ChatSessionRecord, session_id)
-            if existing:
+            if existing and existing.deleted_at is None:
                 return chat_session_to_read(existing)
+            if existing and existing.deleted_at is not None:
+                session_id = None
             record = ChatSessionRecord(
                 session_id=session_id or new_request_id("session"),
                 title=title,
                 private=private,
+                origin=origin,
             )
             session.add(record)
             session.commit()
@@ -669,6 +721,8 @@ class ContextStore:
     def get_session(self, session_id: str) -> ChatSessionRead | None:
         with Session(self.engine) as session:
             record = session.get(ChatSessionRecord, session_id)
+            if record is not None and record.deleted_at is not None:
+                return None
             return chat_session_to_read(record) if record else None
 
     def update_session(
@@ -677,20 +731,237 @@ class ContextStore:
         *,
         title: str | None = None,
         private: bool | None = None,
+        origin: str | None = None,
     ) -> ChatSessionRead | None:
         with Session(self.engine) as session:
             record = session.get(ChatSessionRecord, session_id)
             if record is None:
                 return None
+            if record.deleted_at is not None:
+                return None
             if title is not None:
                 record.title = title
             if private is not None:
                 record.private = private
+            if origin is not None:
+                record.origin = origin
             record.updated_at = utc_now()
             session.add(record)
             session.commit()
             session.refresh(record)
             return chat_session_to_read(record)
+
+    def list_sessions(
+        self,
+        *,
+        limit: int = 100,
+        before: datetime | None = None,
+    ) -> list[ChatSessionListItem]:
+        capped_limit = max(1, min(limit, 100))
+        before_clause = "AND s.updated_at < :before" if before is not None else ""
+        statement = text(
+            f"""
+            SELECT
+                s.session_id,
+                s.title,
+                s.private,
+                s.origin,
+                s.updated_at,
+                COUNT(m.id) AS message_count,
+                COALESCE(
+                    (
+                        SELECT fm.content
+                        FROM chatmessagerecord fm
+                        WHERE fm.session_id = s.session_id AND fm.role = 'user'
+                        ORDER BY fm.created_at, fm.id
+                        LIMIT 1
+                    ),
+                    ''
+                ) AS first_user_message,
+                SUM(
+                    CASE
+                        WHEN m.role = 'assistant' AND m.backend IN ('codex', 'claude-code')
+                        THEN 1 ELSE 0
+                    END
+                ) AS premium_count,
+                SUM(
+                    CASE
+                        WHEN m.role = 'assistant'
+                            AND m.backend IS NOT NULL
+                            AND m.backend NOT IN ('codex', 'claude-code')
+                        THEN 1 ELSE 0
+                    END
+                ) AS local_count
+            FROM chatsessionrecord s
+            LEFT JOIN chatmessagerecord m ON m.session_id = s.session_id
+            WHERE s.deleted_at IS NULL
+                AND (s.origin = 'ui' OR s.title IS NOT NULL)
+                {before_clause}
+            GROUP BY s.session_id, s.title, s.private, s.origin, s.updated_at
+            ORDER BY s.updated_at DESC
+            LIMIT :limit
+            """
+        )
+        params: dict[str, object] = {"limit": capped_limit}
+        if before is not None:
+            params["before"] = before
+        with Session(self.engine) as session:
+            rows = session.execute(statement, params=params).all()
+        items: list[ChatSessionListItem] = []
+        for row in rows:
+            data = row._mapping
+            local_count = int(data["local_count"] or 0)
+            premium_count = int(data["premium_count"] or 0)
+            items.append(
+                ChatSessionListItem(
+                    session_id=str(data["session_id"]),
+                    title=_display_title(data["title"], data["first_user_message"]),
+                    stored_title=str(data["title"]) if data["title"] is not None else None,
+                    message_count=int(data["message_count"] or 0),
+                    updated_at=_as_datetime(data["updated_at"]),
+                    private=bool(data["private"]),
+                    backend_summary=_backend_summary(local_count, premium_count),
+                    origin=str(data["origin"]) if data["origin"] is not None else None,
+                )
+            )
+        return items
+
+    def search_sessions(self, query: str, *, limit: int = 20) -> list[ChatSessionSearchResult]:
+        clean_query = query.strip()
+        if len(clean_query) < 2:
+            return []
+        capped_limit = max(1, min(limit, 50))
+        like_query = f"%{_escape_like(clean_query)}%"
+        statement = text(
+            """
+            SELECT
+                s.session_id,
+                s.title,
+                s.private,
+                s.origin,
+                s.updated_at,
+                COALESCE(
+                    (
+                        SELECT fm.content
+                        FROM chatmessagerecord fm
+                        WHERE fm.session_id = s.session_id AND fm.role = 'user'
+                        ORDER BY fm.created_at, fm.id
+                        LIMIT 1
+                    ),
+                    ''
+                ) AS first_user_message,
+                COALESCE(
+                    (
+                        SELECT sm.content
+                        FROM chatmessagerecord sm
+                        WHERE sm.session_id = s.session_id
+                            AND sm.content LIKE :like_query ESCAPE '\\'
+                        ORDER BY sm.created_at, sm.id
+                        LIMIT 1
+                    ),
+                    s.title,
+                    ''
+                ) AS match_text,
+                SUM(
+                    CASE
+                        WHEN m.role = 'assistant' AND m.backend IN ('codex', 'claude-code')
+                        THEN 1 ELSE 0
+                    END
+                ) AS premium_count,
+                SUM(
+                    CASE
+                        WHEN m.role = 'assistant'
+                            AND m.backend IS NOT NULL
+                            AND m.backend NOT IN ('codex', 'claude-code')
+                        THEN 1 ELSE 0
+                    END
+                ) AS local_count
+            FROM chatsessionrecord s
+            LEFT JOIN chatmessagerecord m ON m.session_id = s.session_id
+            WHERE s.deleted_at IS NULL
+                AND (
+                    s.title LIKE :like_query ESCAPE '\\'
+                    OR EXISTS (
+                        SELECT 1
+                        FROM chatmessagerecord xm
+                        WHERE xm.session_id = s.session_id
+                            AND xm.content LIKE :like_query ESCAPE '\\'
+                    )
+                )
+            GROUP BY s.session_id, s.title, s.private, s.origin, s.updated_at
+            ORDER BY s.updated_at DESC
+            LIMIT :limit
+            """
+        )
+        with Session(self.engine) as session:
+            rows = session.execute(
+                statement,
+                params={"like_query": like_query, "limit": capped_limit},
+            ).all()
+        results: list[ChatSessionSearchResult] = []
+        for row in rows:
+            data = row._mapping
+            local_count = int(data["local_count"] or 0)
+            premium_count = int(data["premium_count"] or 0)
+            results.append(
+                ChatSessionSearchResult(
+                    session_id=str(data["session_id"]),
+                    title=_display_title(data["title"], data["first_user_message"]),
+                    snippet=_snippet_around(data["match_text"], clean_query),
+                    updated_at=_as_datetime(data["updated_at"]),
+                    private=bool(data["private"]),
+                    backend_summary=_backend_summary(local_count, premium_count),
+                    origin=str(data["origin"]) if data["origin"] is not None else None,
+                )
+            )
+        return results
+
+    def delete_session(self, session_id: str) -> ChatSessionRead | None:
+        with Session(self.engine) as session:
+            record = session.get(ChatSessionRecord, session_id)
+            if record is None:
+                return None
+            now = utc_now()
+            record.deleted_at = now
+            record.updated_at = now
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return chat_session_to_read(record)
+
+    def restore_session(self, session_id: str) -> ChatSessionRead | None:
+        with Session(self.engine) as session:
+            record = session.get(ChatSessionRecord, session_id)
+            if record is None:
+                return None
+            record.deleted_at = None
+            record.updated_at = utc_now()
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            return chat_session_to_read(record)
+
+    def purge_deleted_sessions(self, *, before: datetime) -> int:
+        with Session(self.engine) as session:
+            records = session.exec(
+                select(ChatSessionRecord).where(
+                    col(ChatSessionRecord.deleted_at).is_not(None),
+                    col(ChatSessionRecord.deleted_at) <= before,
+                )
+            ).all()
+            purged = 0
+            for record in records:
+                messages = session.exec(
+                    select(ChatMessageRecord).where(
+                        ChatMessageRecord.session_id == record.session_id
+                    )
+                ).all()
+                for message in messages:
+                    session.delete(message)
+                session.delete(record)
+                purged += 1
+            session.commit()
+            return purged
 
     def append_message(
         self,
@@ -705,7 +976,7 @@ class ContextStore:
     ) -> ChatMessageRead:
         with Session(self.engine) as session:
             session_record = session.get(ChatSessionRecord, session_id)
-            if session_record is None:
+            if session_record is None or session_record.deleted_at is not None:
                 raise ValueError(f"Unknown session_id: {session_id}")
             now = utc_now()
             record = ChatMessageRecord(

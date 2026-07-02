@@ -185,9 +185,12 @@ class SwitchboardCoreService:
         session_id: str | None = None,
         new_session: bool = False,
     ) -> SwitchboardResponse:
+        metadata_payload = dict(metadata or {})
+        origin = "ui" if metadata_payload.get("surface") == "ui" else "cli"
         session = self.session_manager.resolve_session(
             session_id=session_id,
             new_session=new_session,
+            origin=origin,
         )
         request = SwitchboardRequest(
             request_id=new_request_id(self.container.settings.request_id_prefix),
@@ -196,7 +199,7 @@ class SwitchboardCoreService:
             model=model,
             timeout_s=timeout_s,
             private_mode=self.container.personal_config.preferences.private_mode,
-            metadata=dict(metadata or {}),
+            metadata=metadata_payload,
         )
         user_message = self.context_store.append_message(
             session_id=session.session_id,
