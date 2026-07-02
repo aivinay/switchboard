@@ -50,11 +50,14 @@ Use it when you want to:
 ## What it does
 
 - **Routes** across local [Ollama](https://ollama.com) models, the **Codex** CLI, and **Claude Code** — deterministic rules first, with optional tiny learned classifiers for recall.
+- **Recommends** local Ollama model packs for your detected RAM, from a tiny `llama3.2:3b` floor tier through larger 2026 packs.
 - **Private mode** — a deterministic keyword/PII/secret-format floor blocks sensitive prompts from ever reaching a subscription backend, even on fallback.
 - **Grounds** answers with deterministic tools (time/date, safe calculator, unit conversion, keyless live stock & news) instead of letting a model guess.
 - **Carries context** across backend switches: recent user, assistant, and tool turns are assembled into one redacted session prompt.
-- **Compresses** long context with a Headroom-inspired layer; the model-boundary pass only summarizes recent conversation, while trusted facts, retrieved memory, and the current request survive intact.
+- **Compresses** long context with a Headroom-inspired heuristic by default, with optional Headroom engine support behind the `headroom` extra.
 - **Remembers** across backends via local embedding-based semantic memory, with SQLite search available for direct memory lookup.
+- **Escalates** weak local answers only when enabled, never through the privacy floor.
+- **Tracks** local premium quota usage and exposes savings, quota, and route-chip metadata in the web UI.
 - **Explains every decision** and records metadata-only telemetry (no prompt/response bodies).
 - **Ships its own evaluation** — a 100-case quality benchmark, a local LLM-as-judge, and a multi-run statistical harness.
 
@@ -102,6 +105,9 @@ ollama pull llama3.2:3b
 
 # sanity-check your setup
 switchboard doctor
+
+# choose a hardware-appropriate local model pack
+switchboard models --recommend
 
 # ask — Switchboard routes it, grounds it, and tells you why
 switchboard ask "summarize this error log and suggest a fix"
@@ -212,13 +218,21 @@ preferences:
   private_mode: true          # block sensitive prompts from non-local backends
   allow_cloud: false
   compression_enabled: true
+  compression_engine: "heuristic"  # heuristic | headroom
   compression_threshold_tokens: 1000
+  embedding_model: "nomic-embed-text"
   semantic_memory_enabled: true
   semantic_memory_top_k: 3
+  escalation_enabled: false
+  escalation_confidence_threshold: 0.55
+  router_llm_model: "llama3.2:3b"
   claude_code_web_search: true  # allow Claude Code WebSearch for live-data fallback
   finance_provider: "yahoo"
   news_provider: "google_news_rss"
   store_feedback_examples: false
+quota:
+  codex_calls_per_5h: null
+  claude_calls_per_week: null
 ```
 
 Provider API keys are referenced **by environment-variable name** (e.g.

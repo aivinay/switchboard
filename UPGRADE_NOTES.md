@@ -249,6 +249,28 @@ Tests:
   and 2/5 not verified because the web provider is not configured.
 - Phase check after the validation fix: `make check`, 684 collected, passed.
 
+### Phase D - 0.3.0 release prep
+
+Status: done.
+
+- Bumped `[project] version` to `0.3.0`.
+- Rolled `CHANGELOG.md` Unreleased into `## [0.3.0] - 2026-07-02`.
+- Added terse README feature/config mentions for the upgrade surfaces while
+  keeping the Evaluation block byte-identical.
+- Ran the tracked-file privacy check from `RELEASE.md`; no private files were
+  tracked.
+- Built `switchboard_local-0.3.0.tar.gz` and
+  `switchboard_local-0.3.0-py3-none-any.whl`. `twine check dist/*` passed.
+- Confirmed the wheel includes `switchboard/app/static/*` and
+  `switchboard/config/*` package data.
+- Did not tag, merge, publish, or create a GitHub release.
+
+Tests:
+
+- Release check: `make check`, 684 collected, passed.
+- Packaging check: `python -m build`; `python -m twine check dist/*`; wheel
+  contents inspected for `switchboard/app/static/*` and `switchboard/config/*`.
+
 ## Validation
 
 | Step | Commands | Observed result |

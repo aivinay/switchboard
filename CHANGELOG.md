@@ -6,10 +6,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-02
+
 ### Added
-- Added `make sync-config` and a drift test so the packaged
-  `switchboard/config/` tree remains canonical while the root `config/` tree
-  stays available for development and Docker mounts.
 - Added the 2026 Ollama model pack, hardware-aware `switchboard models
   --recommend`, and explicit local role mappings for general, coding, and
   reasoning routes.
@@ -31,6 +30,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   chips, private-mode indicator, quota meters, and a savings dashboard fed by
   recorded metrics.
 
+### Changed
+- Made the packaged `switchboard/config/` tree canonical, with `make
+  sync-config` and drift tests keeping the root `config/` copy aligned for
+  development and Docker mounts.
+- Updated `switchboard doctor` to point at local model recommendations and
+  report the GLM 4.7 Flash Ollama version requirement.
+
 ### Removed
 - Removed legacy Ollama chat profiles replaced by the 2026 local model pack:
   `ollama/qwen3:8b`, `ollama/qwen2.5-coder:7b`,
@@ -47,6 +53,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   recommending a subscription fallback.
 - Targeted mypy at Python 3.12 syntax so NumPy 2.1+ stubs using PEP 695 parse
   correctly, and annotated pre-existing training variables that this exposes.
+- Corrected Headroom installation docs to use the `switchboard-local` package
+  name.
+- Corrected the real-backend smoke expectation for deterministic time-tool
+  prompts, which are grounded and then formatted locally through Ollama.
 
 ## [0.2.3] - 2026-07-01
 
@@ -134,7 +144,8 @@ First public release.
   bundle (Zenodo, doi:10.5281/zenodo.20836918), not this repository.
 - FastAPI service, CLI (`switchboard`), and a minimal local web UI.
 
-[Unreleased]: https://github.com/aivinay/switchboard/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/aivinay/switchboard/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/aivinay/switchboard/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/aivinay/switchboard/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/aivinay/switchboard/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/aivinay/switchboard/compare/v0.2.0...v0.2.1
