@@ -57,6 +57,20 @@ def test_detect_upgrade_plan_for_plain_venv() -> None:
     assert plan.can_execute is True
 
 
+def test_detect_upgrade_plan_for_venv_with_externally_managed_base() -> None:
+    plan = detect_upgrade_plan(
+        prefix=Path("/tmp/project/.venv"),
+        base_prefix=Path("/opt/homebrew"),
+        executable="/tmp/project/.venv/bin/python",
+        package_file=Path("/tmp/project/.venv/lib/site-packages/switchboard/__init__.py"),
+        direct_url_text=None,
+        externally_managed=True,
+    )
+
+    assert plan.install_method == "venv-pip"
+    assert plan.can_execute is True
+
+
 def test_detect_upgrade_plan_for_editable_install(tmp_path: Path) -> None:
     package_file = tmp_path / "src" / "switchboard" / "__init__.py"
     package_file.parent.mkdir(parents=True)

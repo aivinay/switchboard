@@ -122,7 +122,7 @@ def detect_upgrade_plan(
             ),
             "Source checkouts should be updated with git, then reinstalled.",
         )
-    is_externally_managed = (
+    is_externally_managed = resolved_prefix == resolved_base and (
         externally_managed if externally_managed is not None else _externally_managed()
     )
     if is_externally_managed:
