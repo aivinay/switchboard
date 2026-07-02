@@ -85,3 +85,10 @@ warn_redundant_casts = true
 check_untyped_defs = true
 disallow_untyped_defs = false
 ignore_missing_imports = true
+
+# Numpy 2.1+ ships stubs with Python 3.12 `type` statements. The router extra
+# can install those stubs on Python 3.11, so skip following numpy internals while
+# keeping Switchboard itself checked on the configured minimum Python version.
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*"]
+follow_imports = "skip"

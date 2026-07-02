@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Added `make sync-config` and a drift test so the packaged
+  `switchboard/config/` tree remains canonical while the root `config/` tree
+  stays available for development and Docker mounts.
+
+### Fixed
+- Made `switchboard route` previews honor private mode when Ollama is
+  unavailable: sensitive prompts now preview as local-only/refused instead of
+  recommending a subscription fallback.
+- Skipped following NumPy internals in mypy so the optional router extra stays
+  type-checkable across Python 3.11 and newer NumPy stubs.
+
 ## [0.2.3] - 2026-07-01
 
 ### Changed

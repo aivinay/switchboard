@@ -37,6 +37,11 @@ Personal routing is intentionally explicit and testable. The router recommends o
 - The stateful core path adds shared context, semantic memory, and compression after
   routing policy has been applied.
 
+When private mode flags a prompt as sensitive and Ollama is unavailable, `switchboard
+route` keeps the recommendation on Ollama and explains that execution would refuse the
+request. It must not preview Codex or Claude as a fallback for sensitive content, because
+the privacy floor is final.
+
 ## CLI Explanations And Reason Codes
 
 The CLI shows friendly `Why` bullets by default, for example:

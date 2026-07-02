@@ -58,6 +58,9 @@ to build shared context on the stateful core path.
 When `private_mode=true`, confidential, regulated, and private personal prompts are kept
 off cloud and subscription routes. If there is no acceptable local/mock route, the router
 blocks or recommends a manual review path rather than routing around the constraint.
+Route previews follow the same floor: if a sensitive prompt would require Ollama and the
+local runtime is unavailable, the preview says the request would be refused instead of
+showing Codex or Claude as a fallback.
 
 Sensitivity does not automatically mean "use the strongest model." Private medical or
 regulated content blocks cloud/subscription routes, while task complexity still decides

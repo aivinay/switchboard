@@ -39,9 +39,18 @@ make typecheck
 ## Configuration
 
 - `.env.example` lists supported environment variables.
-- `config/personal.yaml` contains local-first user preferences and provider toggles.
-- `config/models.yaml` contains mock, local, cloud, and manual-subscription model profiles.
+- `switchboard/config/` is the canonical packaged config tree.
+- `config/personal.yaml` contains the development/Docker-mount copy of local-first user
+  preferences and provider toggles.
+- `config/models.yaml` contains the development/Docker-mount copy of mock, local, cloud,
+  and manual-subscription model profiles.
 - SQLite is the default local database.
+
+After editing packaged defaults, refresh the root development copy with:
+
+```bash
+make sync-config
+```
 
 ## Local Models
 

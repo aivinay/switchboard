@@ -242,6 +242,26 @@ class SwitchboardCoreService:
         request = self.compression.compress(request)
         decision = self.route(request, forced_backend=backend)
         request.metadata.update(self._route_metadata(decision))
+        if request.metadata.get("private_mode_would_block") and not decision.forced_backend:
+            response = SwitchboardResponse(
+                request_id=request.request_id,
+                backend=decision.backend,
+                session_id=session.session_id,
+                success=False,
+                error_message=(
+                    "Local model unavailable; private mode flagged this prompt as "
+                    "personal, so Switchboard will not send it to a subscription "
+                    "backend. Start Ollama and retry, or redact the prompt."
+                ),
+                routing_reason=(
+                    f"{decision.routing_reason} Private mode blocked subscription fallback."
+                ),
+                cost_type=BackendCostType.LOCAL,
+                estimated_cost_usd=0.0,
+            )
+            self._finalize_response_metadata(request, response)
+            self._record(request, response)
+            return response
         adapter = self.registry.get(decision.backend)
         if adapter is None:
             response = SwitchboardResponse(
@@ -860,6 +880,12 @@ class SwitchboardCoreService:
             )
 
         route_type, preferred, reason = self._classified_route(request)
+        if request.metadata.get("private_mode_would_block"):
+            return self._decision(
+                backend=preferred,
+                route_type=route_type,
+                routing_reason=reason,
+            )
         if self._is_available(preferred):
             return self._decision(
                 backend=preferred,
@@ -919,9 +945,18 @@ class SwitchboardCoreService:
         the fallback when the LLM router is unavailable or unparseable.
         """
         # Privacy first: sensitive content stays on the local model instead of
-        # being hard-blocked later at the subscription boundary.
-        if self._content_is_sensitive(request) and self._is_available("ollama"):
+        # falling through to subscription fallback when the local model is down.
+        if self._content_is_sensitive(request):
             request.metadata["private_mode_rerouted"] = True
+            if not self._is_available("ollama"):
+                request.metadata["private_mode_would_block"] = True
+                return (
+                    "local",
+                    "ollama",
+                    "Private mode flagged this prompt as sensitive; the local model "
+                    "is unavailable, so Switchboard would refuse it rather than send "
+                    "it to Claude or Codex.",
+                )
             return (
                 "local",
                 "ollama",

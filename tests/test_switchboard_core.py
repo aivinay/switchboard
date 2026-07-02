@@ -1262,6 +1262,74 @@ def test_core_route_preview_keeps_sensitive_content_local(tmp_path: Path) -> Non
     assert "Private mode detected sensitive content" in decision.routing_reason
 
 
+def test_core_route_preview_blocks_sensitive_content_when_ollama_unavailable(
+    tmp_path: Path,
+) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama", available=False),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+
+    decision = service.preview_route(
+        "my ssn is 123-45-6789, summarize this medical record"
+    )
+
+    assert decision.backend == "ollama"
+    assert decision.display_model == "Ollama"
+    assert not decision.fallback_used
+    assert decision.fallback_from is None
+    assert "would refuse" in decision.routing_reason
+
+
+def test_cli_route_explains_private_mode_block_when_ollama_unavailable(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama", available=False),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "switchboard.cli.build_core_service",
+        lambda **kwargs: service,
+    )
+
+    route_command(
+        argparse.Namespace(
+            prompt="my ssn is 123-45-6789, summarize this medical record",
+            project=None,
+            show_prompt=False,
+            debug=False,
+            show_reasons=False,
+            force_model=None,
+        )
+    )
+
+    output = capsys.readouterr().out
+    assert "Recommendation: Ollama" in output
+    assert "Backend: ollama" in output
+    assert "would refuse" in output
+    assert "Fallback from:" not in output
+    assert "Recommendation: Claude" not in output
+
+
 def test_backends_command_prints_availability(monkeypatch, capsys) -> None:
     class FakeCoreService:
         def backends(self):  # noqa: ANN201
