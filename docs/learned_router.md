@@ -74,6 +74,30 @@ pure-Python at inference (no numpy), retrainable nightly from feedback, and its
 confidence scores gate the rules fallback. numpy is needed only at training
 time (the optional `[router]` extra).
 
+## Which Router Mode Should I Use?
+
+- `rules`: safest and fastest deterministic baseline.
+- `learned`: default recommendation for daily use. It keeps deterministic policy first,
+  then uses the local embedding classifier for route recall with rules fallback.
+- `hybrid`: rules first, then a local LLM judge only when rules classify the prompt as
+  unknown.
+- `llm`: consults the local LLM judge for every non-policy decision; useful for local
+  experiments, but slower than `learned`.
+
+For the LLM judge, `preferences.router_llm_model` defaults to `llama3.2:3b`. Set it to
+`hf.co/katanemo/Arch-Router-1.5B.gguf` to use Arch-Router's policy-selection prompt:
+
+```yaml
+preferences:
+  router_mode: "hybrid"
+  router_llm_model: "hf.co/katanemo/Arch-Router-1.5B.gguf"
+```
+
+The embedding classifier remains the default because it is faster and cheaper locally.
+Arch-Router can be more accurate on ambiguous prompts, with roughly 0.2-1s of local
+latency depending on hardware. Any parse failure, timeout, or unavailable router model
+falls back to deterministic rules.
+
 ## Design invariant
 
 The model replaces classification, never policy. These remain deterministic

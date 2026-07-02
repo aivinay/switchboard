@@ -403,7 +403,7 @@ class QualityBenchRunner:
                 )
             else:
                 llm_router = LlmRouter(
-                    model=preferences.llm_router_model,
+                    model=preferences.router_llm_model or preferences.llm_router_model,
                     base_url=ollama_base_url,
                 )
         memory_service = None

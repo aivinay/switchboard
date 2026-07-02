@@ -85,7 +85,7 @@ def build_configured_core_service(
     llm_router = None
     if effective_router_mode in {"llm", "hybrid"}:
         llm_router = LlmRouter(
-            model=preferences.llm_router_model,
+            model=preferences.router_llm_model or preferences.llm_router_model,
             base_url=ollama_base_url,
         )
 

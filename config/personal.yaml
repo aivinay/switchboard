@@ -21,6 +21,7 @@ preferences:
   # low. "llm"/"hybrid" call a small Ollama model instead (slower).
   router_mode: "learned"
   llm_router_model: "llama3.2:3b"
+  router_llm_model: "llama3.2:3b"
   # Learned tool dispatcher: second-chance tool detection when the regex
   # detector misses ("what is 87 divided by 4"). Predictions only count if
   # the actual tool verifies them. Train once with:

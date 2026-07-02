@@ -33,6 +33,7 @@ class PersonalPreferences(BaseModel):
     # rules fallback).
     router_mode: str = "rules"
     llm_router_model: str = "llama3.2:3b"
+    router_llm_model: str | None = None
     # Trained-router weights file (relative to repo root) and confidence floor.
     router_weights_path: str = "config/router_weights.json"
     learned_router_min_confidence: float = 0.55

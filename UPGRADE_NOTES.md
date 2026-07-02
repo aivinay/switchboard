@@ -93,6 +93,26 @@ Tests:
 - Focused escalation tests passed.
 - Phase check: `make check`, 662 collected, passed.
 
+### Phase 5 - Arch-Router-1.5B as LLM judge option
+
+Status: done.
+
+- Added `preferences.router_llm_model`, preserving `llm_router_model` as a
+  compatibility fallback.
+- Added first-class Arch-Router detection for
+  `hf.co/katanemo/Arch-Router-1.5B.gguf`.
+- Arch-Router prompts now define `tool`, `local`, `coding`, and `reasoning` as
+  named policies and parse the returned JSON policy selection.
+- Generic LLM router calls now request structured JSON output through Ollama's
+  `format` schema.
+- Parse failures, unknown Arch policies, unavailable models, and timeouts
+  continue to fail closed to deterministic rules.
+
+Tests:
+
+- Focused LLM-router tests passed.
+- Phase check: `make check`, 667 collected, passed.
+
 ## Manual Follow-Ups
 
 Recommended 2026 local pulls:
@@ -141,6 +161,18 @@ preferences:
   escalation_confidence_threshold: 0.55
 ```
 
+Use Arch-Router as the local LLM judge:
+
+```bash
+ollama pull hf.co/katanemo/Arch-Router-1.5B.gguf
+```
+
+```yaml
+preferences:
+  router_mode: "hybrid"
+  router_llm_model: "hf.co/katanemo/Arch-Router-1.5B.gguf"
+```
+
 ## Draft PR Description
 
 ### Summary
@@ -158,6 +190,7 @@ privacy floor and local-first routing guarantees.
   memory, task-specific embedding prompts, and fail-closed weight metadata checks.
 - Phase 4: disabled-by-default local answer-confidence check and privacy-preserving
   one-hop escalation for weak local answers.
+- Phase 5: Arch-Router policy judge support and structured generic LLM-router output.
 
 ### Test Evidence
 
@@ -166,6 +199,7 @@ privacy floor and local-first routing guarantees.
 - Phase 2: `make check`, 653 tests collected, all passed.
 - Phase 3: `make check`, 657 tests collected, all passed.
 - Phase 4: `make check`, 662 tests collected, all passed.
+- Phase 5: `make check`, 667 tests collected, all passed.
 
 ### Invariant Checklist
 

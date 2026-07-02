@@ -18,6 +18,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   weight metadata checks.
 - Added disabled-by-default local answer-confidence checks with one-hop premium
   escalation for low-confidence non-sensitive Ollama answers.
+- Added first-class Arch-Router LLM judge support via `router_llm_model`, with
+  policy-format prompting and fail-closed parsing.
 
 ### Fixed
 - Made `switchboard route` previews honor private mode when Ollama is
