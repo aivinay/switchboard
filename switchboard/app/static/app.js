@@ -1,3 +1,5 @@
+const SB = (window.SB = window.SB || {});
+const appState = SB.state;
 const form = document.querySelector("#chat-form");
 const input = document.querySelector("#message");
 const send = document.querySelector("#send");
@@ -15,7 +17,7 @@ const metricTokensSaved = document.querySelector("#metric-tokens-saved");
 const metricPremiumCalls = document.querySelector("#metric-premium-calls");
 const backendUsage = document.querySelector("#backend-usage");
 const trend = document.querySelector("#trend");
-const sessionStorageKey = "switchboard.session_id";
+const sessionStorageKey = SB.storageKeys.sessionId;
 
 const fallbackModelOptions = [
   { value: "auto", label: "Auto", description: "Routes automatically", available: true },
@@ -24,11 +26,12 @@ const fallbackModelOptions = [
   { value: "ollama", label: "Ollama", description: "Runs locally", available: false },
 ];
 
-let currentModel = "auto";
-let isSending = false;
-let sessionId = window.localStorage.getItem(sessionStorageKey) || null;
+let currentModel = appState.currentModel;
+let isSending = appState.composer.isSending;
+let sessionId = appState.sessionId;
 let modelLabels = { auto: "Auto" };
 let modelOptions = [];
+let modelMenuOverlay = null;
 
 /* ------------------------------------------------------------------ */
 /* Minimal safe markdown renderer (local-first: no CDN dependencies). */
@@ -158,6 +161,7 @@ function rememberSession(nextSessionId) {
     return;
   }
   sessionId = nextSessionId;
+  appState.sessionId = nextSessionId;
   window.localStorage.setItem(sessionStorageKey, nextSessionId);
 }
 
@@ -401,6 +405,7 @@ async function loadHistory() {
 
 function startNewChat() {
   sessionId = null;
+  appState.sessionId = null;
   window.localStorage.removeItem(sessionStorageKey);
   messages.textContent = "";
   input.focus();
@@ -580,6 +585,7 @@ async function sendMessage() {
   input.value = "";
   resizeInput();
   isSending = true;
+  appState.composer.isSending = true;
   updateSendState();
   const pending = addMessage("Thinking...", "pending");
   const state = { raw: "", bodyEl: null, displayModel: null, routing: null, failed: false };
@@ -615,6 +621,7 @@ async function sendMessage() {
     addMessage("Switchboard is not reachable. Is the UI server still running?", "error");
   } finally {
     isSending = false;
+    appState.composer.isSending = false;
     updateSendState();
     loadBackendStatus();
     loadQuotaStatus();
@@ -630,8 +637,20 @@ async function sendMessage() {
 /* ------------------------------------------------------------------ */
 
 function setMenuOpen(open) {
+  setMenuOpenFromStack(open, false);
+}
+
+function setMenuOpenFromStack(open, fromStack) {
   modelMenu.hidden = !open;
   modelButton.setAttribute("aria-expanded", String(open));
+  if (!modelMenuOverlay || fromStack) {
+    return;
+  }
+  if (open) {
+    SB.dismissableStack.open(modelMenuOverlay);
+  } else {
+    SB.dismissableStack.remove(modelMenuOverlay);
+  }
 }
 
 function renderModelOptions(options) {
@@ -697,6 +716,7 @@ async function loadBackendStatus() {
 
 function chooseModel(value) {
   currentModel = value;
+  appState.currentModel = value;
   selectedModel.textContent = modelLabels[value] || value;
   for (const option of modelOptions) {
     const isSelected = option.dataset.model === value;
@@ -719,6 +739,13 @@ modelButton.addEventListener("click", () => {
   setMenuOpen(modelMenu.hidden);
 });
 
+modelMenuOverlay = SB.dismissableStack.register({
+  id: "model-menu",
+  element: modelMenu,
+  trigger: modelButton,
+  close: () => setMenuOpenFromStack(false, true),
+});
+
 if (dashboardToggle) {
   dashboardToggle.addEventListener("click", toggleDashboard);
 }
@@ -726,18 +753,6 @@ if (dashboardToggle) {
 if (newChatButton) {
   newChatButton.addEventListener("click", startNewChat);
 }
-
-document.addEventListener("click", (event) => {
-  if (!event.target.closest(".model-picker")) {
-    setMenuOpen(false);
-  }
-});
-
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    setMenuOpen(false);
-  }
-});
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();

@@ -539,9 +539,13 @@ def test_ui_chat_stream_rejects_empty_and_invalid_requests(client: TestClient) -
 def test_ui_static_files_exist_and_call_chat_api(client: TestClient) -> None:
     static_dir = ROOT / "switchboard" / "app" / "static"
     index = static_dir / "index.html"
+    state_js = static_dir / "state.js"
+    overlays_js = static_dir / "overlays.js"
     app_js = static_dir / "app.js"
 
     assert index.exists()
+    assert state_js.exists()
+    assert overlays_js.exists()
     assert app_js.exists()
 
     html = index.read_text(encoding="utf-8")
@@ -559,8 +563,23 @@ def test_ui_static_files_exist_and_call_chat_api(client: TestClient) -> None:
     assert 'aria-label="Send message"' in html
     assert "<button id=\"send\"" in html
     assert ">Send<" not in html
+    assert html.index("/ui/static/state.js") < html.index("/ui/static/overlays.js")
+    assert html.index("/ui/static/overlays.js") < html.index("/ui/static/app.js")
+
+    state = state_js.read_text(encoding="utf-8")
+    assert "window.SB" in state
+    assert "switchboard.session_id" in state
+    assert "openOverlayStack" in state
+    assert "switchboard.feedback.enable_nudge_seen" in state
+
+    overlays = overlays_js.read_text(encoding="utf-8")
+    assert "SB.dismissableStack" in overlays
+    assert 'event.key === "Escape"' in overlays
+    assert "closeTop" in overlays
 
     javascript = app_js.read_text(encoding="utf-8")
+    assert "window.SB" in javascript
+    assert "SB.dismissableStack.register" in javascript
     assert "/api/chat/stream" in javascript
     assert "Thinking..." in javascript
     assert "display_model" in javascript
@@ -575,7 +594,6 @@ def test_ui_static_files_exist_and_call_chat_api(client: TestClient) -> None:
     assert "/api/backends/status" in javascript
     assert "/api/dashboard" in javascript
     assert "/api/quota" in javascript
-    assert "switchboard.session_id" in javascript
     assert "rememberSession" in javascript
     assert "session_id: sessionId" in javascript
     assert "updateSendState" in javascript
