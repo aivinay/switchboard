@@ -97,6 +97,11 @@ class PersonalSavingsConfig(BaseModel):
     assume_premium_for_unknown: bool = False
 
 
+class PersonalQuotaConfig(BaseModel):
+    codex_calls_per_5h: int | None = Field(default=None, ge=0)
+    claude_calls_per_week: int | None = Field(default=None, ge=0)
+
+
 class LocalRuntimeConfig(BaseModel):
     performance_mode: str = "balanced"
     max_loaded_models: int = 2
@@ -123,6 +128,7 @@ class PersonalConfig(BaseModel):
     savings: PersonalSavingsConfig = Field(default_factory=PersonalSavingsConfig)
     local_runtime: LocalRuntimeConfig = Field(default_factory=LocalRuntimeConfig)
     providers: dict[str, PersonalProviderConfig] = Field(default_factory=dict)
+    quota: PersonalQuotaConfig = Field(default_factory=PersonalQuotaConfig)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> PersonalConfig:

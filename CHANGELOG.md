@@ -23,6 +23,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added optional `headroom-ai` compression support behind the `headroom` extra
   and `preferences.compression_engine: "headroom"`, while keeping the
   dependency-free heuristic as the default.
+- Added a local, estimate-only premium quota ledger with user-declared soft
+  budgets, quota-aware premium routing, `switchboard quota`, and `/api/quota`.
 
 ### Fixed
 - Made `switchboard route` previews honor private mode when Ollama is

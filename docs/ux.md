@@ -107,6 +107,16 @@ feedback:
 switchboard usage
 ```
 
+Quota shows local, estimate-only usage against user-declared soft budgets:
+
+```bash
+switchboard quota
+switchboard quota --format json
+```
+
+The web UI can read the same window usage from `GET /api/quota`; meters should stay
+hidden when both budgets are unset.
+
 Feedback is attached to a request ID:
 
 ```bash

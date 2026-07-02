@@ -136,6 +136,28 @@ Tests:
 - Focused compression tests: 14 passed.
 - Phase check: `make check`, 671 collected, passed.
 
+### Phase 7 - quota ledger + quota-aware routing preference
+
+Status: done.
+
+- Added a local, estimate-only quota ledger derived from existing backend
+  metrics. It records no prompt or response bodies and counts successful
+  premium backend calls only.
+- Added top-level `quota.codex_calls_per_5h` and
+  `quota.claude_calls_per_week` soft-budget settings, both unset by default.
+- Added quota-aware routing after forced-backend, privacy, tool-grounding, and
+  deterministic classification policy. It can move an already-premium route to
+  the other plausible premium backend when that backend is available and not
+  constrained.
+- When both premium backends are constrained, Switchboard prefers Ollama and
+  records quota reason metadata. Quota never upgrades a local route to premium.
+- Added `switchboard quota` and the UI-facing `GET /api/quota` endpoint.
+
+Tests:
+
+- Focused quota/core/UI tests: 129 passed.
+- Phase check: `make check`, 679 collected, passed.
+
 ## Manual Follow-Ups
 
 Recommended 2026 local pulls:
@@ -208,6 +230,21 @@ preferences:
   compression_engine: "headroom"
 ```
 
+Enable quota-aware routing with your own soft budgets:
+
+```yaml
+quota:
+  codex_calls_per_5h: 40
+  claude_calls_per_week: 200
+```
+
+Inspect quota windows:
+
+```bash
+switchboard quota
+switchboard quota --format json
+```
+
 ## Draft PR Description
 
 ### Summary
@@ -228,6 +265,8 @@ privacy floor and local-first routing guarantees.
 - Phase 5: Arch-Router policy judge support and structured generic LLM-router output.
 - Phase 6: optional Headroom compression adapter with protected-block preservation and
   heuristic fallback.
+- Phase 7: local premium quota ledger, soft-budget-aware premium rerouting, and
+  CLI/UI quota surfaces.
 
 ### Test Evidence
 
@@ -238,6 +277,7 @@ privacy floor and local-first routing guarantees.
 - Phase 4: `make check`, 662 tests collected, all passed.
 - Phase 5: `make check`, 667 tests collected, all passed.
 - Phase 6: `make check`, 671 tests collected, all passed.
+- Phase 7: `make check`, 679 tests collected, all passed.
 
 ### Invariant Checklist
 
@@ -247,6 +287,8 @@ privacy floor and local-first routing guarantees.
 - Learned/optional paths fail closed to deterministic routing.
 - Optional Headroom compression only sees recent conversation history and fails closed
   to the dependency-free heuristic.
+- Quota-aware routing only affects already-premium preferred routes after privacy and
+  tool policy, and never upgrades local routes to premium.
 - Telemetry remains metadata-only.
 - README benchmark numbers, evaluation claims, and DOI references were not changed.
 - New runtime dependencies were not added to the core install.

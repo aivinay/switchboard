@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -22,12 +23,14 @@ from switchboard.app.models.backends import (
 )
 from switchboard.app.models.catalogue import ModelCatalogue
 from switchboard.app.models.internal import NormalizedRequest
+from switchboard.app.models.personal import PersonalQuotaConfig
 from switchboard.app.models.telemetry import BackendMetricRecord
 from switchboard.app.providers.base import ProviderResponse
 from switchboard.app.providers.ollama import OllamaProviderAdapter
 from switchboard.app.services.answer_confidence import AnswerConfidenceResult
 from switchboard.app.services.container import build_container
 from switchboard.app.services.cost import CostEstimator
+from switchboard.app.services.quota import QuotaLedgerService
 from switchboard.app.services.semantic_memory import EmbeddingUnavailableError
 from switchboard.app.services.switchboard_core import SwitchboardCoreService
 from switchboard.app.storage.db import create_db_engine, init_db
@@ -39,6 +42,7 @@ from switchboard.cli import (
     doctor_command,
     make_parser,
     metrics_command,
+    quota_command,
     route_command,
     train_dispatcher_command,
     train_router_command,
@@ -441,6 +445,192 @@ def test_backend_metrics_redacts_prompt_like_provider_errors(tmp_path: Path) -> 
     assert "redacted" in (record.error_message or "")
     recent_error = summary["recent_errors"][0]  # type: ignore[index]
     assert "private prompt body" not in recent_error["error_message"]  # type: ignore[index]
+
+
+def quota_metric(
+    request_id: str,
+    backend: str,
+    *,
+    success: bool = True,
+    created_at: datetime | None = None,
+) -> BackendMetricRecord:
+    return BackendMetricRecord(
+        request_id=request_id,
+        backend=backend,
+        selected_model=f"{backend}/test",
+        project="personal",
+        prompt_char_count=12,
+        latency_ms=10,
+        success=success,
+        routing_reason="test quota metric",
+        cost_type="subscription",
+        estimated_cost_usd=0.0,
+        private_mode=True,
+        created_at=created_at or datetime.now(UTC),
+    )
+
+
+def test_quota_window_math_counts_successes_inside_trailing_windows(tmp_path: Path) -> None:
+    engine = create_db_engine(f"sqlite:///{tmp_path / 'quota.db'}")
+    init_db(engine)
+    repo = BackendMetricsRepository(engine)
+    now = datetime(2026, 7, 2, 12, 0, tzinfo=UTC)
+    repo.add(quota_metric("codex_recent", "codex", created_at=now - timedelta(hours=4)))
+    repo.add(quota_metric("codex_failed", "codex", success=False, created_at=now))
+    repo.add(quota_metric("codex_old", "codex", created_at=now - timedelta(hours=6)))
+    repo.add(
+        quota_metric("claude_recent", "claude-code", created_at=now - timedelta(days=6))
+    )
+    repo.add(quota_metric("claude_old", "claude-code", created_at=now - timedelta(days=8)))
+
+    status = QuotaLedgerService(
+        repo,
+        PersonalQuotaConfig(codex_calls_per_5h=1, claude_calls_per_week=2),
+    ).snapshot(now=now)
+
+    codex = status["windows"]["codex"]  # type: ignore[index]
+    claude = status["windows"]["claude-code"]  # type: ignore[index]
+    assert codex["used"] == 1
+    assert codex["constrained"] is True
+    assert claude["used"] == 1
+    assert claude["remaining"] == 1
+    assert claude["constrained"] is False
+
+
+def test_quota_reroutes_constrained_codex_to_available_claude(tmp_path: Path) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama"),
+                "codex": FakeAdapter("codex", cost_type=BackendCostType.SUBSCRIPTION),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+    service.container.personal_config.quota.codex_calls_per_5h = 1
+    service.metrics.add(quota_metric("codex_quota_used", "codex"))
+
+    response = service.ask("Debug this failing Python test.")
+
+    assert response.success
+    assert response.backend == "claude-code"
+    record = service.metrics.get(response.request_id)
+    assert record is not None
+    assert record.metadata["quota_reason_code"] == "QUOTA_ALTERNATE_PREMIUM_SELECTED"
+    assert record.metadata["quota_original_backend"] == "codex"
+    assert "user-declared soft quota" in (response.routing_reason or "")
+
+
+def test_quota_both_premium_constrained_prefers_local(tmp_path: Path) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama"),
+                "codex": FakeAdapter("codex", cost_type=BackendCostType.SUBSCRIPTION),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+    service.container.personal_config.quota.codex_calls_per_5h = 1
+    service.container.personal_config.quota.claude_calls_per_week = 1
+    service.metrics.add(quota_metric("codex_quota_used", "codex"))
+    service.metrics.add(quota_metric("claude_quota_used", "claude-code"))
+
+    response = service.ask("Debug this failing Python test.")
+
+    assert response.success
+    assert response.backend == "ollama"
+    record = service.metrics.get(response.request_id)
+    assert record is not None
+    assert record.metadata["quota_force_local"] is True
+    assert record.metadata["quota_reason_code"] == "QUOTA_BOTH_PREMIUM_CONSTRAINED_LOCAL"
+
+
+def test_quota_disabled_by_default_is_noop(tmp_path: Path) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama"),
+                "codex": FakeAdapter("codex", cost_type=BackendCostType.SUBSCRIPTION),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+    service.metrics.add(quota_metric("codex_previous", "codex"))
+
+    response = service.ask("Debug this failing Python test.")
+
+    assert response.success
+    assert response.backend == "codex"
+    record = service.metrics.get(response.request_id)
+    assert record is not None
+    assert "quota_routing_influenced" not in record.metadata
+
+
+def test_quota_never_upgrades_local_decisions(tmp_path: Path) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama"),
+                "codex": FakeAdapter("codex", cost_type=BackendCostType.SUBSCRIPTION),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+    service.container.personal_config.quota.codex_calls_per_5h = 10
+    service.container.personal_config.quota.claude_calls_per_week = 10
+
+    response = service.ask("Summarize this local note.")
+
+    assert response.success
+    assert response.backend == "ollama"
+    record = service.metrics.get(response.request_id)
+    assert record is not None
+    assert "quota_routing_influenced" not in record.metadata
+
+
+def test_quota_never_overrides_private_mode_floor(tmp_path: Path) -> None:
+    service = make_core_service(
+        tmp_path,
+        BackendRegistry(
+            {
+                "ollama": FakeAdapter("ollama", available=False),
+                "codex": FakeAdapter("codex", cost_type=BackendCostType.SUBSCRIPTION),
+                "claude-code": FakeAdapter(
+                    "claude-code",
+                    cost_type=BackendCostType.SUBSCRIPTION,
+                ),
+            }
+        ),
+    )
+    service.container.personal_config.quota.codex_calls_per_5h = 0
+    service.container.personal_config.quota.claude_calls_per_week = 0
+
+    response = service.ask("my ssn is 123-45-6789, summarize this medical record")
+
+    assert response.success is False
+    assert response.backend == "ollama"
+    assert "will not send it to a subscription backend" in (response.error_message or "")
+    record = service.metrics.get(response.request_id)
+    assert record is not None
+    assert record.metadata["private_mode_would_block"] is True
+    assert "quota_routing_influenced" not in record.metadata
 
 
 def test_backend_router_forced_selection(tmp_path: Path) -> None:
@@ -1784,6 +1974,42 @@ def test_metrics_command_summary(monkeypatch, capsys) -> None:
 
     output = capsys.readouterr().out
     assert '"total_requests": 1' in output
+
+
+def test_quota_command_summary(monkeypatch, capsys) -> None:
+    class FakeCoreService:
+        def quota_status(self):  # noqa: ANN201
+            return {
+                "enabled": True,
+                "windows": {
+                    "codex": {
+                        "label": "Codex",
+                        "used": 1,
+                        "budget": 2,
+                        "remaining": 1,
+                        "window": "5h",
+                        "constrained": False,
+                    },
+                    "claude-code": {
+                        "label": "Claude",
+                        "used": 7,
+                        "budget": 7,
+                        "remaining": 0,
+                        "window": "7d",
+                        "constrained": True,
+                    },
+                },
+            }
+
+    monkeypatch.setattr("switchboard.cli.build_core_service", lambda: FakeCoreService())
+
+    quota_command(argparse.Namespace(format="text"))
+
+    output = capsys.readouterr().out
+    assert "Premium quota ledger" in output
+    assert "Codex" in output
+    assert "Claude" in output
+    assert "constrained" in output
 
 
 def test_train_router_command_exits_cleanly_when_embedding_model_down(

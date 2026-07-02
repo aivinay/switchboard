@@ -15,6 +15,8 @@ Personal routing is intentionally explicit and testable. The router recommends o
 - `escalation_enabled: false`
 - `escalation_confidence_threshold: 0.55`
 - `semantic_memory_enabled: true`
+- `quota.codex_calls_per_5h:` unset
+- `quota.claude_calls_per_week:` unset
 
 ## Default Behaviour
 
@@ -58,6 +60,38 @@ low for sensitive content, Switchboard keeps the local answer and appends a note
 private mode prevented premium escalation. Check failures also fail closed: the local
 answer is returned and metadata records that confidence checking was unavailable.
 
+## Optional Quota-Aware Routing
+
+Quota tracking is local and estimate-only. Switchboard records successful premium
+backend calls in the existing backend metrics table, then derives rolling-window counts
+for Codex over the trailing 5 hours and Claude Code over the trailing 7 days. It does
+not scrape provider dashboards, call provider quota APIs, or assume provider limits.
+
+Quota-aware routing is disabled while budgets are unset:
+
+```yaml
+quota:
+  codex_calls_per_5h:
+  claude_calls_per_week:
+```
+
+Set either value to a user-declared soft budget to make the core router quota-aware.
+The quota layer runs only after forced-backend, privacy, tool-grounding, and deterministic
+classification policy. It can move an already-premium preferred route to the other
+premium backend when that backend is available, plausible for the route type, and not
+constrained. If both premium backends are constrained, Switchboard keeps the request on
+Ollama with a quota reason code. It never upgrades a local decision to premium just
+because quota is available.
+
+Inspect the estimate:
+
+```bash
+switchboard quota
+switchboard quota --format json
+```
+
+The UI-facing JSON endpoint is `GET /api/quota`.
+
 ## CLI Explanations And Reason Codes
 
 The CLI shows friendly `Why` bullets by default, for example:
@@ -93,5 +127,8 @@ Examples:
 - `SPECIALIST_MODEL_SWITCH_JUSTIFIED`
 - `OLLAMA_MODEL_ALREADY_LOADED`
 - `OLLAMA_MODEL_NOT_LOADED`
+- `QUOTA_ALTERNATE_PREMIUM_SELECTED`
+- `QUOTA_BOTH_PREMIUM_CONSTRAINED_LOCAL`
+- `QUOTA_PREMIUM_CONSTRAINED_LOCAL`
 
 Legacy `/v1` routes still emit older compatibility reason codes.

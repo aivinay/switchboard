@@ -35,6 +35,11 @@ from switchboard.app.services.compression_layer import (
 from switchboard.app.services.container import ServiceContainer
 from switchboard.app.services.learned_router import LearnedRouter
 from switchboard.app.services.llm_router import LlmRouter
+from switchboard.app.services.quota import (
+    PREMIUM_BACKENDS,
+    QuotaLedgerService,
+    QuotaWindowStatus,
+)
 from switchboard.app.services.response_sanitizer import ResponseSanitizer
 from switchboard.app.services.runtime_context import RuntimeContextProvider
 from switchboard.app.services.semantic_memory import SemanticMemoryService
@@ -74,6 +79,7 @@ class SwitchboardCoreService:
         tool_dispatcher: LearnedToolDispatcher | None = None,
         sensitivity_escalator: LearnedSensitivityEscalator | None = None,
         answer_confidence: AnswerConfidenceService | None = None,
+        quota_ledger: QuotaLedgerService | None = None,
     ) -> None:
         self.registry = registry
         self.metrics = metrics
@@ -95,6 +101,10 @@ class SwitchboardCoreService:
         self.tool_dispatcher = tool_dispatcher
         self.sensitivity_escalator = sensitivity_escalator
         self.answer_confidence = answer_confidence or AnswerConfidenceService()
+        self.quota_ledger = quota_ledger or QuotaLedgerService(
+            self.metrics,
+            self.container.personal_config.quota,
+        )
 
     def backends(self) -> list[BackendInfo]:
         return self.registry.list_backends()
@@ -104,6 +114,9 @@ class SwitchboardCoreService:
 
     def metrics_summary(self) -> dict[str, object]:
         return self.metrics.summary()
+
+    def quota_status(self) -> dict[str, object]:
+        return self.quota_ledger.snapshot()
 
     def preview_route(
         self,
@@ -1042,6 +1055,18 @@ class SwitchboardCoreService:
                 route_type=route_type,
                 routing_reason=reason,
             )
+        route_type, preferred, reason = self._quota_adjusted_route(
+            request,
+            route_type=route_type,
+            preferred=preferred,
+            reason=reason,
+        )
+        if request.metadata.get("quota_force_local"):
+            return self._decision(
+                backend=preferred,
+                route_type=route_type,
+                routing_reason=reason,
+            )
         if self._is_available(preferred):
             return self._decision(
                 backend=preferred,
@@ -1070,6 +1095,107 @@ class SwitchboardCoreService:
             routing_reason=f"{reason} No configured backend is currently available.",
             fallback_used=True,
             fallback_from=preferred,
+        )
+
+    def _quota_adjusted_route(
+        self,
+        request: SwitchboardRequest,
+        *,
+        route_type: str,
+        preferred: str,
+        reason: str,
+    ) -> tuple[str, str, str]:
+        if preferred not in PREMIUM_BACKENDS:
+            return route_type, preferred, reason
+        preferred_status = self.quota_ledger.status_for_backend(preferred)
+        if (
+            preferred_status is None
+            or preferred_status.budget is None
+            or not preferred_status.constrained
+        ):
+            return route_type, preferred, reason
+
+        other = "claude-code" if preferred == "codex" else "codex"
+        other_status = self.quota_ledger.status_for_backend(other)
+        self._attach_quota_metadata(
+            request,
+            original_backend=preferred,
+            preferred_status=preferred_status,
+            alternate_status=other_status,
+        )
+        other_plausible = other in self._fallback_order(route_type)
+        if (
+            other_status is not None
+            and not other_status.constrained
+            and other_plausible
+            and self._is_available(other)
+        ):
+            code = "QUOTA_ALTERNATE_PREMIUM_SELECTED"
+            self._mark_quota_decision(request, selected_backend=other, reason_code=code)
+            return (
+                route_type,
+                other,
+                (
+                    f"{reason} {backend_display_name(preferred)} is at/over the "
+                    "user-declared soft quota "
+                    f"({preferred_status.used}/{preferred_status.budget} calls in the "
+                    f"trailing {preferred_status.window}); using "
+                    f"{backend_display_name(other)} instead."
+                ),
+            )
+
+        if other_status is not None and other_status.constrained:
+            code = "QUOTA_BOTH_PREMIUM_CONSTRAINED_LOCAL"
+        else:
+            code = "QUOTA_PREMIUM_CONSTRAINED_LOCAL"
+        request.metadata["quota_force_local"] = True
+        self._mark_quota_decision(request, selected_backend="ollama", reason_code=code)
+        return (
+            route_type,
+            "ollama",
+            (
+                f"{reason} {backend_display_name(preferred)} is at/over the "
+                "user-declared soft quota "
+                f"({preferred_status.used}/{preferred_status.budget} calls in the "
+                f"trailing {preferred_status.window}); using the local model instead "
+                "of spending more premium quota."
+            ),
+        )
+
+    def _attach_quota_metadata(
+        self,
+        request: SwitchboardRequest,
+        *,
+        original_backend: str,
+        preferred_status: QuotaWindowStatus,
+        alternate_status: QuotaWindowStatus | None,
+    ) -> None:
+        preferred_payload = preferred_status.to_dict()
+        alternate_payload = (
+            alternate_status.to_dict() if alternate_status is not None else None
+        )
+        request.metadata.update(
+            {
+                "quota_routing_influenced": True,
+                "quota_original_backend": original_backend,
+                "quota_preferred_window": preferred_payload,
+                "quota_alternate_window": alternate_payload,
+            }
+        )
+
+    def _mark_quota_decision(
+        self,
+        request: SwitchboardRequest,
+        *,
+        selected_backend: str,
+        reason_code: str,
+    ) -> None:
+        request.metadata.update(
+            {
+                "quota_selected_backend": selected_backend,
+                "quota_reason_code": reason_code,
+                "quota_reason_codes": [reason_code],
+            }
         )
 
     def _decision(

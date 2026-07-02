@@ -680,6 +680,33 @@ def metrics_command(args: argparse.Namespace) -> None:
             print(f"  error: {record.error_message}")
 
 
+def quota_command(args: argparse.Namespace) -> None:
+    status = build_core_service().quota_status()
+    if args.format == "json":
+        print_json(status)
+        return
+    enabled = "enabled" if status.get("enabled") else "disabled (budgets unset)"
+    print("Premium quota ledger: estimate-only, from local backend metrics")
+    print(f"Quota-aware routing: {enabled}")
+    windows = status.get("windows", {})
+    if not isinstance(windows, dict):
+        return
+    for backend in ("codex", "claude-code"):
+        window = windows.get(backend)
+        if not isinstance(window, dict):
+            continue
+        budget = window.get("budget")
+        budget_text = "unset" if budget is None else str(budget)
+        remaining = window.get("remaining")
+        remaining_text = "-" if remaining is None else str(remaining)
+        state = "constrained" if window.get("constrained") else "ok"
+        print(
+            f"{window.get('label', backend):12} {state:12} "
+            f"used={window.get('used', 0)}/{budget_text} "
+            f"window={window.get('window')} remaining={remaining_text}"
+        )
+
+
 def usage_command(args: argparse.Namespace) -> None:
     usage = build_service().usage()
     print(f"Total requests: {usage.get('total_requests', 0)}")
@@ -1474,6 +1501,10 @@ def make_parser() -> argparse.ArgumentParser:
     metrics.add_argument("--last", type=int, default=20)
     metrics.add_argument("--format", choices=["text", "json"], default="text")
     metrics.set_defaults(func=metrics_command)
+
+    quota = subparsers.add_parser("quota", help="Show user-declared premium quota usage")
+    quota.add_argument("--format", choices=["text", "json"], default="text")
+    quota.set_defaults(func=quota_command)
 
     usage = subparsers.add_parser("usage", help="Show personal usage summary")
     usage.set_defaults(func=usage_command)

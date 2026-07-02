@@ -14,6 +14,7 @@ from switchboard.app.models.backends import (
     SwitchboardRequest,
     SwitchboardResponse,
 )
+from switchboard.app.models.telemetry import BackendMetricRecord
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -232,6 +233,35 @@ def test_ui_chat_api_records_backend_metrics(
     assert records[0].success is True
     assert records[0].metadata["surface"] == "ui"
     assert records[0].metadata["requested_backend"] == "auto"
+
+
+def test_ui_quota_endpoint_reports_declared_budget_usage(client: TestClient) -> None:
+    container = client.app.state.container
+    container.personal_config.quota.codex_calls_per_5h = 2
+    container.backend_metrics_repository.add(
+        BackendMetricRecord(
+            request_id="req_ui_quota",
+            backend="codex",
+            selected_model="codex/test",
+            project="ui",
+            prompt_char_count=10,
+            latency_ms=12,
+            success=True,
+            routing_reason="test quota metric",
+            cost_type="subscription",
+            estimated_cost_usd=0.0,
+            private_mode=True,
+        )
+    )
+
+    response = client.get("/api/quota")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["enabled"] is True
+    assert body["windows"]["codex"]["used"] == 1
+    assert body["windows"]["codex"]["budget"] == 2
+    assert body["windows"]["claude-code"]["budget"] is None
 
 
 def test_ui_time_question_uses_tool_grounding_with_selected_model(

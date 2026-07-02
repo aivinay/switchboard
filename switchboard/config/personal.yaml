@@ -74,6 +74,12 @@ savings:
   premium_unit_value_usd: null
   assume_premium_for_unknown: false
 
+quota:
+  # Optional user-declared soft budgets. Switchboard never scrapes or assumes
+  # provider limits; blank values keep quota-aware routing disabled.
+  codex_calls_per_5h:
+  claude_calls_per_week:
+
 local_runtime:
   # memory_saver: keep one hot model when possible; good for tighter RAM.
   # balanced: keep a general model plus a specialist when useful; recommended for 32 GB Macs.

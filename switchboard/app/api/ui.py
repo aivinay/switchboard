@@ -14,6 +14,7 @@ from switchboard.app.models.personal import FeedbackCreate, FeedbackRead
 from switchboard.app.services.container import ServiceContainer
 from switchboard.app.services.core_factory import build_configured_core_service
 from switchboard.app.services.personal_switchboard import PersonalSwitchboardService
+from switchboard.app.services.quota import QuotaLedgerService
 from switchboard.app.services.switchboard_core import SwitchboardCoreService
 
 router = APIRouter(tags=["ui"])
@@ -288,6 +289,15 @@ def chat_history(session_id: str, request: Request) -> UiHistoryResponse:
         if record.role in {"user", "assistant"}
     ]
     return UiHistoryResponse(session_id=session_id, messages=messages)
+
+
+@router.get("/api/quota")
+def quota_status(request: Request) -> dict[str, object]:
+    container: ServiceContainer = request.app.state.container
+    return QuotaLedgerService(
+        container.backend_metrics_repository,
+        container.personal_config.quota,
+    ).snapshot()
 
 
 VALID_CORRECTED_BACKENDS = ("ollama", "codex", "claude-code")
