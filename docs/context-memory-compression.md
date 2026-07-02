@@ -88,7 +88,7 @@ preferences:
 To try the optional Headroom adapter:
 
 ```bash
-pip install "switchboard[headroom]"
+pip install "switchboard-local[headroom]"
 ```
 
 ```yaml

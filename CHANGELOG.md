@@ -29,12 +29,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   chips, private-mode indicator, quota meters, and a savings dashboard fed by
   recorded metrics.
 
+### Removed
+- Removed legacy Ollama chat profiles replaced by the 2026 local model pack:
+  `ollama/qwen3:8b`, `ollama/qwen2.5-coder:7b`,
+  `ollama/deepseek-r1:8b`, `ollama/gemma3:12b`,
+  `ollama/qwen2.5-coder:14b`, `ollama/deepseek-r1:14b`, and
+  `ollama/mistral-small3.2:24b`. Existing role mappings that reference these
+  profiles fall back to defaults; migrate with
+  `switchboard models --recommend --apply` or remap
+  `preferences.local_model_roles`.
+
 ### Fixed
 - Made `switchboard route` previews honor private mode when Ollama is
   unavailable: sensitive prompts now preview as local-only/refused instead of
   recommending a subscription fallback.
-- Skipped following NumPy internals in mypy so the optional router extra stays
-  type-checkable across Python 3.11 and newer NumPy stubs.
+- Targeted mypy at Python 3.12 syntax so NumPy 2.1+ stubs using PEP 695 parse
+  correctly, and annotated pre-existing training variables that this exposes.
 
 ## [0.2.3] - 2026-07-01
 

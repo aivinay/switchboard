@@ -39,6 +39,13 @@ Status: done.
   `embeddinggemma`, and `qwen3-embedding:0.6b`.
 - Kept `llama3.2:3b` as the minimal local chat fallback and
   `nomic-embed-text` as the compatibility embedding default.
+- Removed the legacy Ollama chat profiles replaced by the 2026 pack:
+  `ollama/qwen3:8b`, `ollama/qwen2.5-coder:7b`,
+  `ollama/deepseek-r1:8b`, `ollama/gemma3:12b`,
+  `ollama/qwen2.5-coder:14b`, `ollama/deepseek-r1:14b`, and
+  `ollama/mistral-small3.2:24b`. If an existing
+  `preferences.local_model_roles` mapping still points at one of these, routing
+  falls back to defaults until the mapping is updated.
 - Added `preferences.local_model_roles` and wired personal routing to prefer
   configured local role mappings before deterministic fallbacks.
 - Added `switchboard models --recommend` with Linux/macOS RAM detection,
@@ -182,6 +189,26 @@ Tests:
 - Local UI smoke: `GET /ui`, `/api/backends/status`, `/api/dashboard`, and
   `/api/quota` returned 200 on `127.0.0.1:8765`.
 
+### Phase A - verification findings
+
+Status: done.
+
+- Replaced the ineffective NumPy mypy import override with `python_version =
+  "3.12"` so NumPy 2.1+ stubs using PEP 695 syntax parse before import policy
+  applies.
+- Added the pre-existing train-router type annotations exposed by the new mypy
+  target.
+- Corrected Headroom installation docs to use the PyPI distribution name
+  `switchboard-local[headroom]`.
+- Documented the removed legacy Ollama chat profiles and the migration path via
+  `switchboard models --recommend --apply` or manual
+  `preferences.local_model_roles` remapping.
+
+Tests:
+
+- Phase check: `make check`, 681 collected, passed with NumPy 2.5.0 installed
+  on Python 3.14. Python 3.11 was not re-verified locally.
+
 ## Manual Follow-Ups
 
 Recommended 2026 local pulls:
@@ -209,6 +236,8 @@ ollama pull qwen3-embedding:0.6b
 
 Run `switchboard models --recommend --apply` to update local role mappings after
 reviewing the recommendation. Add `--yes` only for noninteractive automation.
+This is also the migration path for configs that still reference removed legacy
+Ollama profiles; alternatively remap `preferences.local_model_roles` by hand.
 
 Retrain learned weights after changing `preferences.embedding_model`:
 
@@ -245,7 +274,7 @@ preferences:
 Try optional Headroom compression:
 
 ```bash
-pip install "switchboard[headroom]"
+pip install "switchboard-local[headroom]"
 ```
 
 ```yaml

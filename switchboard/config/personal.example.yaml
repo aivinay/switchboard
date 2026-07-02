@@ -34,7 +34,7 @@ preferences:
   sensitivity_escalator_enabled: true
   sensitivity_escalator_min_confidence: 0.7
   # Prompt/context compression before routing. Keep "heuristic" for the
-  # dependency-free default, or install switchboard[headroom] and set
+  # dependency-free default, or install switchboard-local[headroom] and set
   # "headroom" to compress recent conversation history with headroom-ai.
   compression_enabled: true
   compression_threshold_tokens: 1000

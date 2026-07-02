@@ -94,6 +94,7 @@ def train(
     golden: Sequence[RouterExample] | None = None,
 ) -> tuple[RouterWeights, TrainingReport]:
     import numpy as np
+    from numpy.typing import NDArray
 
     rng = np.random.default_rng(seed)
     class_index = {name: i for i, name in enumerate(classes)}
@@ -126,7 +127,9 @@ def train(
     # Inverse-frequency class weights to counter imbalance, scaled by
     # per-source trust (golden/feedback > template > external).
     weights_by_source = source_weights or DEFAULT_SOURCE_WEIGHTS
-    counts = np.bincount(y_train, minlength=num_classes).astype(np.float64)
+    counts: NDArray[np.float64] = np.bincount(y_train, minlength=num_classes).astype(
+        np.float64
+    )
     counts[counts == 0] = 1.0
     class_weight = counts.sum() / (num_classes * counts)
     source_factor = np.array(
@@ -136,7 +139,7 @@ def train(
     sample_weight = class_weight[y_train] * source_factor
 
     weights = np.zeros((num_classes, dim), dtype=np.float64)
-    bias = np.zeros(num_classes, dtype=np.float64)
+    bias: NDArray[np.float64] = np.zeros(num_classes, dtype=np.float64)
     one_hot = np.eye(num_classes)[y_train]
 
     for _ in range(epochs):
