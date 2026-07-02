@@ -1426,7 +1426,7 @@ def test_version_command_prints_installed_version(
 
     version_command(argparse.Namespace())
 
-    assert "Switchboard 0.3.0" in capsys.readouterr().out
+    assert "Switchboard 0.4.0" in capsys.readouterr().out
 
 
 def test_version_command_reports_cached_newer_release(
@@ -1445,7 +1445,7 @@ def test_version_command_reports_cached_newer_release(
     version_command(argparse.Namespace())
 
     output = capsys.readouterr().out
-    assert "Switchboard 0.3.0" in output
+    assert "Switchboard 0.4.0" in output
     assert "latest on PyPI: 9.9.9" in output
     assert "switchboard upgrade" in output
 
@@ -1458,7 +1458,7 @@ def test_global_version_flag_prints_version(
 
     main()
 
-    assert "Switchboard 0.3.0" in capsys.readouterr().out
+    assert "Switchboard 0.4.0" in capsys.readouterr().out
 
 
 def test_main_without_command_still_errors(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1489,7 +1489,7 @@ def test_upgrade_check_reports_plan_without_executing(
     upgrade_command(argparse.Namespace(check=True))
 
     output = capsys.readouterr().out
-    assert "Switchboard 0.3.0" in output
+    assert "Switchboard 0.4.0" in output
     assert "Install method: venv-pip" in output
     assert "Upgrade command: python -m pip install --upgrade switchboard-local" in output
 
@@ -1547,14 +1547,14 @@ def test_ui_command_checks_for_updates_on_startup(
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
     monkeypatch.setattr(
         "switchboard.cli.refresh_cli_version_status",
-        lambda: VersionStatus("0.3.0", "0.3.1", True),
+        lambda: VersionStatus("0.4.0", "0.4.1", True),
     )
     monkeypatch.setattr("uvicorn.run", lambda *args, **kwargs: calls.append((args, kwargs)))
 
     ui_command(argparse.Namespace(host="127.0.0.1", port=9999))
 
     output = capsys.readouterr().out
-    assert "Switchboard 0.3.1 is available" in output
+    assert "Switchboard 0.4.1 is available" in output
     assert "Switchboard UI running at http://127.0.0.1:9999/ui" in output
     assert calls
 

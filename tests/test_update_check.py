@@ -9,6 +9,7 @@ import pytest
 
 from switchboard.app.models.personal import PersonalConfig
 from switchboard.app.services.update_check import (
+    CI_ENV_VARS,
     PYPI_JSON_URL,
     UPDATE_CHECK_NOTICE,
     refresh_update_status,
@@ -25,6 +26,13 @@ class FakePyPIResponse:
 
     def json(self) -> dict[str, object]:
         return {"info": {"version": self.version}}
+
+
+@pytest.fixture(autouse=True)
+def clear_update_check_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SWITCHBOARD_UPDATE_CHECK", raising=False)
+    for name in CI_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
 
 
 def test_update_check_cache_path_uses_config_home(

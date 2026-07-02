@@ -123,6 +123,18 @@ def test_dispatcher_embedder_failure_fails_closed() -> None:
     assert "ollama down" in (result.error or "")
 
 
+def test_dispatcher_degenerate_embedding_fails_closed() -> None:
+    d = LearnedToolDispatcher(
+        weights=handcrafted_weights(),
+        embed=lambda _: [1.0] * handcrafted_weights().dim,
+    )
+    result = d.classify("what is 87 divided by 4")
+    assert not result.success
+    assert result.tool_class == "none"
+    assert result.capability is None
+    assert "degenerate_embedding" in (result.error or "")
+
+
 def test_dispatcher_from_file_missing_weights_returns_none(tmp_path: Path) -> None:
     assert LearnedToolDispatcher.from_file(tmp_path / "missing.json") is None
     path = tmp_path / "weights.json"

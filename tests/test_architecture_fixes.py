@@ -92,7 +92,7 @@ _SENSITIVE_WORDS = {"crying", "marriage", "lump", "owe", "burden", "drinking", "
 
 def toy_embed(text: str) -> list[float]:
     words = set(re.findall(r"[a-z]+", text.lower()))
-    return [float(bool(words & _SENSITIVE_WORDS)), 1.0]
+    return [2.0 if words & _SENSITIVE_WORDS else 0.0, 1.0]
 
 
 def escalator_weights() -> RouterWeights:
@@ -127,7 +127,7 @@ def test_escalator_stays_quiet_on_neutral_and_low_confidence() -> None:
     neutral = escalator().classify("write a python function to merge lists")
     assert neutral.success and not neutral.escalate
 
-    strict = escalator(min_confidence=0.999).classify("i've been crying a lot lately")
+    strict = escalator(min_confidence=1.0).classify("i've been crying a lot lately")
     assert strict.success and not strict.escalate
 
 
@@ -138,6 +138,16 @@ def test_escalator_fails_closed_on_embedder_failure() -> None:
     broken = LearnedSensitivityEscalator(weights=escalator_weights(), embed=boom)
     result = broken.classify("i've been crying a lot lately")
     assert not result.success and not result.escalate
+
+
+def test_escalator_degenerate_embedding_fails_closed() -> None:
+    broken = LearnedSensitivityEscalator(
+        weights=escalator_weights(),
+        embed=lambda _: [1.0, 1.0],
+    )
+    result = broken.classify("i've been crying a lot lately")
+    assert not result.success and not result.escalate
+    assert "degenerate_embedding" in (result.error or "")
 
 
 def test_escalator_from_file_missing_returns_none(tmp_path: Path) -> None:

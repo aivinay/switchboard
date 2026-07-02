@@ -125,6 +125,18 @@ def test_learned_router_dim_mismatch_fails() -> None:
     assert "does not match" in (result.error or "")
 
 
+def test_learned_router_degenerate_embedding_fails_closed() -> None:
+    r = LearnedRouter(
+        weights=handcrafted_weights(),
+        embed=lambda _: [1.0] * len(_FEATURES),
+    )
+    result = r.classify("write python code")
+    assert not result.success
+    assert result.route_type == "local"
+    assert result.backend == "ollama"
+    assert "degenerate_embedding" in (result.error or "")
+
+
 def test_weights_roundtrip(tmp_path: Path) -> None:
     path = tmp_path / "w.json"
     import json
@@ -183,7 +195,12 @@ class FakeAdapter(AgentAdapter):
         )
 
 
-def make_service(tmp_path: Path, **kwargs) -> tuple[SwitchboardCoreService, dict]:
+def make_service(
+    tmp_path: Path,
+    *,
+    learned_router: LearnedRouter | None = None,
+    **kwargs,
+) -> tuple[SwitchboardCoreService, dict]:
     adapters = {
         "ollama": FakeAdapter("ollama"),
         "codex": FakeAdapter("codex", cost_type=BackendCostType.SUBSCRIPTION),
@@ -205,7 +222,7 @@ def make_service(tmp_path: Path, **kwargs) -> tuple[SwitchboardCoreService, dict
         metrics=container.backend_metrics_repository,
         container=container,
         router_mode="learned",
-        learned_router=router(),
+        learned_router=learned_router or router(),
         **kwargs,
     )
     return service, adapters
@@ -265,6 +282,21 @@ def test_learned_mode_falls_back_to_rules_when_embedder_down(tmp_path: Path) -> 
     req = SwitchboardRequest(request_id="r", prompt="debug this failing pytest")
     decision = service.route(req)
     assert decision.backend == "codex"  # rules still catch "debug"
+    assert "used rules" in decision.routing_reason.lower()
+
+
+def test_learned_mode_falls_back_to_rules_for_degenerate_embedding(
+    tmp_path: Path,
+) -> None:
+    broken_router = LearnedRouter(
+        weights=handcrafted_weights(),
+        embed=lambda _: [1.0] * len(_FEATURES),
+    )
+    service, _ = make_service(tmp_path, learned_router=broken_router)
+
+    decision = service.route(SwitchboardRequest(request_id="r", prompt="debug this pytest"))
+
+    assert decision.backend == "codex"
     assert "used rules" in decision.routing_reason.lower()
 
 

@@ -552,7 +552,7 @@ def test_ui_version_endpoint_reads_cached_update_status(
 
     assert response.status_code == 200
     assert response.json() == {
-        "installed": "0.3.0",
+        "installed": "0.4.0",
         "latest": "9.9.9",
         "update_available": True,
     }
@@ -923,7 +923,12 @@ def test_ui_static_files_exist_and_call_chat_api(client: TestClient) -> None:
     assert "renderDashboardQuota" in javascript
     assert "setDashboardOpen" in javascript
     assert "dashboardOverlay" in javascript
+    assert "function countLabel" in javascript
+    assert 'countLabel(total, "answer")' in javascript
+    assert 'countLabel(feedback.corrected, "correction")' in javascript
     assert "feedback.pending_corrections" in javascript
+    assert "answers —" not in javascript
+    assert "corrections pending" not in javascript
     assert "rememberSession" in javascript
     assert "session_id: sessionId" in javascript
     assert "updateSendState" in javascript

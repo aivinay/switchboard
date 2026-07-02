@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-02
+
 ### Added
 - Added `switchboard version`, global `switchboard --version`,
   `switchboard upgrade [--check]`, and the opt-out daily PyPI update check.
@@ -19,9 +21,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added the web-UI session sidebar with session list/search, rename, soft-delete with
   undo, first-run demo prompts, and the version/update footer pill.
 
+### Changed
+- Made source-checkout upgrade guidance use the project install target
+  (`git pull && make install`) when a checkout root is detected.
+
 ### Fixed
 - Replaced the stale source-checkout `__version__` fallback with
   `pyproject.toml` discovery.
+- Fixed checkout-root detection for nested package paths so `switchboard upgrade`
+  no longer points at `switchboard/app`.
+- Fixed singular/plural feedback-quality counts in the web-UI savings drawer.
+- Made learned routing, tool dispatch, and sensitivity escalation reject
+  zero-variance embeddings before scoring so degenerate vectors fail closed.
 - Made web feedback an upsert per request and scrub pending wrong-model examples when
   feedback is retracted or changed to `good`.
 - Made Private chat force Ollama from both client intent and stored session state, with
@@ -165,7 +176,8 @@ First public release.
   bundle (Zenodo, doi:10.5281/zenodo.20836918), not this repository.
 - FastAPI service, CLI (`switchboard`), and a minimal local web UI.
 
-[Unreleased]: https://github.com/aivinay/switchboard/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/aivinay/switchboard/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/aivinay/switchboard/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/aivinay/switchboard/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/aivinay/switchboard/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/aivinay/switchboard/compare/v0.2.1...v0.2.2
