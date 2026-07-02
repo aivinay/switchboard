@@ -12,6 +12,7 @@ from typing import Any, cast
 
 import httpx
 
+from switchboard import __version__
 from switchboard.app.backends.registry import BackendRegistry
 from switchboard.app.core.config import (
     DEFAULT_CONFIG_FILES,
@@ -51,6 +52,8 @@ from switchboard.app.services.provider_status import (
 )
 from switchboard.app.services.semantic_memory import EmbeddingUnavailableError
 from switchboard.app.services.switchboard_core import SwitchboardCoreService
+from switchboard.app.services.update_check import VersionStatus, refresh_update_status
+from switchboard.app.services.upgrade import UpgradePlan, detect_upgrade_plan
 from switchboard.app.storage.db import create_db_engine, init_db
 from switchboard.evals.quality_bench import (
     DEFAULT_CONDITIONS,
@@ -114,6 +117,47 @@ def print_json(payload: Any) -> None:
     if hasattr(payload, "model_dump"):
         payload = payload.model_dump(mode="json")
     print(json.dumps(payload, indent=2))
+
+
+def print_version_status(status: VersionStatus) -> None:
+    print(f"Switchboard {status.installed}")
+    if status.update_available and status.latest:
+        print(f"latest on PyPI: {status.latest} — run: switchboard upgrade")
+
+
+def cli_personal_config() -> PersonalConfig:
+    settings = get_settings()
+    return PersonalConfig.from_yaml(settings.personal_config_path)
+
+
+def refresh_cli_version_status() -> VersionStatus:
+    return refresh_update_status(__version__, cli_personal_config(), notice=print)
+
+
+def version_command(args: argparse.Namespace) -> None:
+    print_version_status(refresh_cli_version_status())
+
+
+def print_upgrade_plan(plan: UpgradePlan) -> None:
+    print(f"Install method: {plan.install_method}")
+    print(f"Upgrade command: {plan.command_text}")
+    if not plan.can_execute:
+        print(plan.reason)
+
+
+def upgrade_command(args: argparse.Namespace) -> None:
+    plan = detect_upgrade_plan()
+    if args.check:
+        print_version_status(refresh_cli_version_status())
+        print_upgrade_plan(plan)
+        return
+    if not plan.can_execute:
+        print_upgrade_plan(plan)
+        return
+    print(f"Running: {plan.command_text}")
+    completed = subprocess.run(plan.command, check=False)
+    if completed.returncode != 0:
+        raise SystemExit(completed.returncode)
 
 
 USER_REASON_LABELS = {
@@ -1419,6 +1463,9 @@ def init_command(args: argparse.Namespace) -> None:
 def ui_command(args: argparse.Namespace) -> None:
     import uvicorn
 
+    status = refresh_cli_version_status()
+    if status.update_available and status.latest:
+        print(f"Switchboard {status.latest} is available — run: switchboard upgrade", flush=True)
     url = f"http://{args.host}:{args.port}/ui"
     print(f"Switchboard UI running at {url}", flush=True)
     uvicorn.run(
@@ -1443,7 +1490,24 @@ def add_eval_arguments(parser: argparse.ArgumentParser) -> None:
 
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="switchboard")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument(
+        "--version",
+        action="store_true",
+        dest="show_version",
+        help="Show the installed Switchboard version",
+    )
+    subparsers = parser.add_subparsers(dest="command")
+
+    version = subparsers.add_parser("version", help="Show the installed Switchboard version")
+    version.set_defaults(func=version_command)
+
+    upgrade = subparsers.add_parser("upgrade", help="Upgrade switchboard-local")
+    upgrade.add_argument(
+        "--check",
+        action="store_true",
+        help="Show upgrade status and command without running it",
+    )
+    upgrade.set_defaults(func=upgrade_command)
 
     route = subparsers.add_parser(
         "route",
@@ -1735,6 +1799,11 @@ def make_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = make_parser()
     args = parser.parse_args()
+    if args.show_version:
+        version_command(args)
+        return
+    if not hasattr(args, "func"):
+        parser.error("the following arguments are required: command")
     args.func(args)
 
 

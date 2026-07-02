@@ -15,6 +15,7 @@ preferences:
   compress_long_context_before_premium_recommendation: true
   cache_routing: true
   cache_answers: false
+  update_check_enabled: true
   # Switchboard Core router mode: rules | llm | hybrid | learned.
   # "learned" classifies with one tiny embedding lookup (~50ms, no extra LLM);
   # falls back to deterministic rules if weights are missing or confidence is

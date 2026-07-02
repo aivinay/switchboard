@@ -33,6 +33,8 @@ from switchboard.app.services.cost import CostEstimator
 from switchboard.app.services.quota import QuotaLedgerService
 from switchboard.app.services.semantic_memory import EmbeddingUnavailableError
 from switchboard.app.services.switchboard_core import SwitchboardCoreService
+from switchboard.app.services.update_check import VersionStatus
+from switchboard.app.services.upgrade import UpgradePlan
 from switchboard.app.storage.db import create_db_engine, init_db
 from switchboard.app.storage.repositories import BackendMetricsRepository
 from switchboard.cli import (
@@ -40,6 +42,7 @@ from switchboard.cli import (
     backend_error_hint,
     backends_command,
     doctor_command,
+    main,
     make_parser,
     metrics_command,
     quota_command,
@@ -47,6 +50,9 @@ from switchboard.cli import (
     train_dispatcher_command,
     train_router_command,
     train_sensitivity_command,
+    ui_command,
+    upgrade_command,
+    version_command,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1228,6 +1234,10 @@ def test_cli_route_uses_core_route_preview(monkeypatch, capsys) -> None:
         "switchboard.cli.build_core_service",
         lambda **kwargs: FakeCoreService(),
     )
+    monkeypatch.setattr(
+        "switchboard.cli.refresh_update_status",
+        lambda *args, **kwargs: pytest.fail("route must not check for updates"),
+    )
 
     route_command(
         argparse.Namespace(
@@ -1407,6 +1417,146 @@ def test_cli_route_rejects_manual_catalogue_ids() -> None:
 def test_public_core_cli_rejects_personal_only_flags(argv: list[str]) -> None:
     with pytest.raises(SystemExit):
         make_parser().parse_args(argv)
+
+
+def test_version_command_prints_installed_version(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.setenv("SWITCHBOARD_UPDATE_CHECK", "off")
+
+    version_command(argparse.Namespace())
+
+    assert "Switchboard 0.3.0" in capsys.readouterr().out
+
+
+def test_version_command_reports_cached_newer_release(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+) -> None:
+    cache_dir = tmp_path / "config-home"
+    switchboard_dir = cache_dir / "switchboard"
+    switchboard_dir.mkdir(parents=True)
+    (switchboard_dir / "update-check.json").write_text(
+        '{"latest": "9.9.9", "checked_at": "2026-07-02T00:00:00+00:00"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SWITCHBOARD_CONFIG_HOME", str(cache_dir))
+    monkeypatch.setenv("SWITCHBOARD_UPDATE_CHECK", "off")
+
+    version_command(argparse.Namespace())
+
+    output = capsys.readouterr().out
+    assert "Switchboard 0.3.0" in output
+    assert "latest on PyPI: 9.9.9" in output
+    assert "switchboard upgrade" in output
+
+
+def test_global_version_flag_prints_version(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.setattr("sys.argv", ["switchboard", "--version"])
+    monkeypatch.setenv("SWITCHBOARD_UPDATE_CHECK", "off")
+
+    main()
+
+    assert "Switchboard 0.3.0" in capsys.readouterr().out
+
+
+def test_main_without_command_still_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["switchboard"])
+
+    with pytest.raises(SystemExit):
+        main()
+
+
+def test_upgrade_check_reports_plan_without_executing(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.setenv("SWITCHBOARD_UPDATE_CHECK", "off")
+    monkeypatch.setattr(
+        "switchboard.cli.detect_upgrade_plan",
+        lambda: UpgradePlan(
+            install_method="venv-pip",
+            command=("python", "-m", "pip", "install", "--upgrade", "switchboard-local"),
+            can_execute=True,
+            reason="test plan",
+        ),
+    )
+    monkeypatch.setattr(
+        "switchboard.cli.subprocess.run",
+        lambda *args, **kwargs: pytest.fail("upgrade --check must not execute"),
+    )
+
+    upgrade_command(argparse.Namespace(check=True))
+
+    output = capsys.readouterr().out
+    assert "Switchboard 0.3.0" in output
+    assert "Install method: venv-pip" in output
+    assert "Upgrade command: python -m pip install --upgrade switchboard-local" in output
+
+
+def test_upgrade_command_prints_manual_plan_without_executing(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.setattr(
+        "switchboard.cli.detect_upgrade_plan",
+        lambda: UpgradePlan(
+            install_method="editable",
+            command=("sh", "-c", "cd /repo && python -m pip install -e ."),
+            can_execute=False,
+            reason="Editable installs should be upgraded from the checkout.",
+        ),
+    )
+    monkeypatch.setattr(
+        "switchboard.cli.subprocess.run",
+        lambda *args, **kwargs: pytest.fail("manual upgrade plans must not execute"),
+    )
+
+    upgrade_command(argparse.Namespace(check=False))
+
+    output = capsys.readouterr().out
+    assert "Install method: editable" in output
+    assert "Editable installs should be upgraded" in output
+
+
+def test_upgrade_command_propagates_subprocess_exit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Result:
+        returncode = 7
+
+    monkeypatch.setattr(
+        "switchboard.cli.detect_upgrade_plan",
+        lambda: UpgradePlan(
+            install_method="venv-pip",
+            command=("python", "-m", "pip", "install", "--upgrade", "switchboard-local"),
+            can_execute=True,
+            reason="test plan",
+        ),
+    )
+    monkeypatch.setattr("switchboard.cli.subprocess.run", lambda *args, **kwargs: Result())
+
+    with pytest.raises(SystemExit) as exc:
+        upgrade_command(argparse.Namespace(check=False))
+
+    assert exc.value.code == 7
+
+
+def test_ui_command_checks_for_updates_on_startup(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    monkeypatch.setattr(
+        "switchboard.cli.refresh_cli_version_status",
+        lambda: VersionStatus("0.3.0", "0.3.1", True),
+    )
+    monkeypatch.setattr("uvicorn.run", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    ui_command(argparse.Namespace(host="127.0.0.1", port=9999))
+
+    output = capsys.readouterr().out
+    assert "Switchboard 0.3.1 is available" in output
+    assert "Switchboard UI running at http://127.0.0.1:9999/ui" in output
+    assert calls
 
 
 def test_core_route_preview_and_auto_ask_choose_same_backend(tmp_path: Path) -> None:

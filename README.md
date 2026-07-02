@@ -189,6 +189,7 @@ Switchboard is local-first and privacy-aware by construction:
 - **Secret-format detection** (cloud keys, JWTs, PEM blocks, env credentials) shares its patterns with context redaction, so the routing boundary and the redactor can't drift apart.
 - **Metadata-only telemetry** — prompt and response bodies are not stored by default.
 - Semantic-memory **embeddings and the eval judge run locally**.
+- Version surfaces (`switchboard version`, `switchboard upgrade --check`, and UI startup) may check PyPI once per day for `switchboard-local` updates; disable with `SWITCHBOARD_UPDATE_CHECK=off` or `preferences.update_check_enabled: false`.
 
 Switchboard deliberately does **not** resell API access, scrape web UIs, or
 bypass provider limits — subscription CLIs are invoked exactly as the

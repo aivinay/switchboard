@@ -303,6 +303,36 @@ Tests:
 | `Summarize these meeting notes in three bullets` | Ollama / local | Ollama / local | yes | rules 685 ms, hybrid 658 ms |
 | `Latest OpenAI news` | Ollama / local | Ollama / local | yes | rules 1207 ms, hybrid 1245 ms |
 
+## UI v2 Track 1 - Upgrade CLI Validation
+
+Branch: `feat/upgrade-cli`
+
+Commits:
+
+- `9517ce5 fix: resolve source checkout version`
+- `380a63b feat: add version command`
+- `b068f3a feat: add upgrade command`
+- `8c57414 feat: add cached update checks`
+- `3438da9 docs: disclose update checks`
+- `30781e6 feat: expose version status api`
+- `f67aac7 fix: detect venv upgrades under pep 668`
+
+Definition-of-done item 4:
+
+| Check | Observed result | Status |
+| --- | --- | --- |
+| `switchboard version` shows installed + latest when known | Unit coverage pins cached-newer output (`latest on PyPI: 9.9.9 - run: switchboard upgrade`). Live isolated-cache run against PyPI reported `Switchboard 0.3.0`; current PyPI latest is also `0.3.0`, so no update line was expected. | Pass |
+| Global `switchboard --version` works | `SWITCHBOARD_UPDATE_CHECK=off .venv/bin/switchboard --version` printed `Switchboard 0.3.0`. | Pass |
+| First-run notice prints exactly once | With `SWITCHBOARD_CONFIG_HOME=/tmp/switchboard-track1-update`, the first `switchboard version` printed `Switchboard checks PyPI once a day for new versions. Disable: SWITCHBOARD_UPDATE_CHECK=off.`; the second run did not. | Pass |
+| `SWITCHBOARD_UPDATE_CHECK=off` suppresses network calls | Live opt-out version command printed without a notice; unit coverage fails the test if PyPI is called under env/config/CI opt-outs. | Pass |
+| `switchboard upgrade` detects executable pip/pipx/uv paths | Unit coverage verifies pipx -> `pipx upgrade switchboard-local`, uv tool -> `uv tool upgrade switchboard-local`, and venv/plain pip -> `python -m pip install --upgrade switchboard-local`, with subprocess exit propagation. Live checkout check reported venv pip command; no real upgrade was executed because this branch is a source checkout at the current latest version. | Pass |
+| Editable/git/PEP 668 paths do not mutate automatically | Unit coverage verifies editable installs, git checkouts, and non-venv externally managed Python produce manual commands without subprocess execution. Live walkthrough found and fixed the PEP 668-over-venv edge case. | Pass |
+| `/api/version` exposes cached status without a network call | API test covers cached newer status. Live TestClient smoke returned `{'installed': '0.3.0', 'latest': '0.3.0', 'update_available': False}` from the isolated cache. | Pass |
+
+Track gate:
+
+- `make check`: ruff clean, mypy clean, 717 tests collected, passed.
+
 ## Manual Follow-Ups
 
 Recommended 2026 local pulls:

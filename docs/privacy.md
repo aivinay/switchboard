@@ -117,6 +117,28 @@ enabled, private-mode reroutes and learned sensitivity escalations are not snaps
 Those requests can still store a correction label without persisting the assembled
 context.
 
+## Update Checks
+
+`switchboard version`, `switchboard upgrade --check`, and `switchboard ui` startup may
+contact `https://pypi.org/pypi/switchboard-local/json` to see whether a newer public
+release exists. The check is synchronous, capped at about one second, cached for 24 hours
+in the normal Switchboard config home as `update-check.json`, and skipped in CI.
+
+The request does not include prompts, responses, session data, memory data, API keys, or
+telemetry. Like any HTTPS request to PyPI, it still exposes ordinary connection metadata
+to PyPI and the network path. Disable it with:
+
+```bash
+SWITCHBOARD_UPDATE_CHECK=off
+```
+
+or in config:
+
+```yaml
+preferences:
+  update_check_enabled: false
+```
+
 ## Hot Local Models
 
 Latency-aware routing never weakens privacy rules. Reusing an already-loaded Ollama model

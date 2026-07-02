@@ -264,6 +264,27 @@ def test_ui_quota_endpoint_reports_declared_budget_usage(client: TestClient) -> 
     assert body["windows"]["claude-code"]["budget"] is None
 
 
+def test_ui_version_endpoint_reads_cached_update_status(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cache_dir = tmp_path / "config-home" / "switchboard"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "update-check.json").write_text(
+        json.dumps({"latest": "9.9.9", "checked_at": "2026-07-02T00:00:00+00:00"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SWITCHBOARD_CONFIG_HOME", str(tmp_path / "config-home"))
+
+    response = client.get("/api/version")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "installed": "0.3.0",
+        "latest": "9.9.9",
+        "update_available": True,
+    }
+
+
 def test_ui_backends_status_endpoint_lists_auto_first(
     client: TestClient,
     fake_adapters: dict[str, RecordingAdapter],
