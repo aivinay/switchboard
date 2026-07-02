@@ -264,6 +264,73 @@ def test_ui_quota_endpoint_reports_declared_budget_usage(client: TestClient) -> 
     assert body["windows"]["claude-code"]["budget"] is None
 
 
+def test_ui_backends_status_endpoint_lists_auto_first(
+    client: TestClient,
+    fake_adapters: dict[str, RecordingAdapter],
+) -> None:
+    response = client.get("/api/backends/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    values = [option["value"] for option in body["options"]]
+    assert values == ["auto", "codex", "claude", "ollama"]
+    assert body["options"][0]["label"] == "Auto"
+    assert body["options"][0]["available"] is True
+    assert body["options"][1]["available"] is True
+    assert body["private_mode"] is True
+
+
+def test_ui_dashboard_endpoint_uses_recorded_metrics(client: TestClient) -> None:
+    container = client.app.state.container
+    container.backend_metrics_repository.add(
+        BackendMetricRecord(
+            request_id="req_dashboard_local",
+            backend="ollama",
+            selected_model="ollama/test",
+            project="ui",
+            prompt_char_count=40,
+            latency_ms=12,
+            success=True,
+            routing_reason="local",
+            cost_type="local",
+            estimated_cost_usd=0.0,
+            private_mode=True,
+            metadata_json=json.dumps(
+                {
+                    "compression_tokens_saved": 4,
+                    "context_compression_tokens_saved": 30,
+                }
+            ),
+        )
+    )
+    container.backend_metrics_repository.add(
+        BackendMetricRecord(
+            request_id="req_dashboard_premium",
+            backend="codex",
+            selected_model="codex/test",
+            project="ui",
+            prompt_char_count=80,
+            latency_ms=20,
+            success=True,
+            routing_reason="coding",
+            cost_type="subscription",
+            estimated_cost_usd=0.0,
+            private_mode=True,
+        )
+    )
+
+    response = client.get("/api/dashboard")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["premium_calls"] == 1
+    assert body["premium_calls_avoided_vs_always_premium"] == 1
+    assert body["estimated_tokens_saved"]["compression"] == 34
+    assert body["estimated_tokens_saved"]["routing"] == 10
+    assert body["usage_by_backend"] == {"codex": 1, "ollama": 1}
+    assert len(body["last_7_days"]) == 7
+
+
 def test_ui_time_question_uses_tool_grounding_with_selected_model(
     client: TestClient,
     fake_adapters: dict[str, RecordingAdapter],
@@ -461,10 +528,10 @@ def test_ui_static_files_exist_and_call_chat_api(client: TestClient) -> None:
     assert "<h1>Switchboard</h1>" in html
     assert "Personal AI Switchboard" not in html
     assert "personal_ai_switchboard" not in html
-    assert ">Auto</strong>" in html
-    assert ">Codex</strong>" in html
-    assert ">Claude</strong>" in html
-    assert ">Ollama</strong>" in html
+    assert 'id="model-menu"' in html
+    assert 'id="dashboard-toggle"' in html
+    assert 'id="quota-meters"' in html
+    assert 'id="private-mode"' in html
     assert "Backend" not in html
     assert "Ask Switchboard..." in html
     assert html.index('id="model-picker-button"') < html.index("<h1>Switchboard</h1>")
@@ -484,11 +551,16 @@ def test_ui_static_files_exist_and_call_chat_api(client: TestClient) -> None:
     assert "loadHistory" in javascript
     assert "/api/chat/history" in javascript
     assert "/api/chat/feedback" in javascript
+    assert "/api/backends/status" in javascript
+    assert "/api/dashboard" in javascript
+    assert "/api/quota" in javascript
     assert "switchboard.session_id" in javascript
     assert "rememberSession" in javascript
     assert "session_id: sessionId" in javascript
     assert "updateSendState" in javascript
     assert "input.value.trim().length === 0" in javascript
+    assert "renderModelOptions" in javascript
+    assert "appendRoutingChips" in javascript
     # Internal backend ids appear only as API payload values (feedback
     # correction buttons); visible labels remain friendly names.
     assert '["Claude", "claude-code"]' in javascript
@@ -500,17 +572,16 @@ def test_ui_static_files_exist_and_call_chat_api(client: TestClient) -> None:
 
 def test_ui_dropdown_content_and_selection_logic() -> None:
     static_dir = ROOT / "switchboard" / "app" / "static"
-    html = (static_dir / "index.html").read_text(encoding="utf-8")
     javascript = (static_dir / "app.js").read_text(encoding="utf-8")
 
-    assert "Routes automatically" in html
-    assert "Best for coding tasks" in html
-    assert "Good for reasoning and design" in html
-    assert "Runs locally" in html
-    assert 'class="model-option selected"' in html
-    assert 'aria-selected="true"' in html
-    assert "chooseModel(option.dataset.model)" in javascript
-    assert 'selectedModel.textContent = modelLabels[value]' in javascript
+    assert "Routes automatically" in javascript
+    assert "Best for coding tasks" in javascript
+    assert "Good for reasoning and design" in javascript
+    assert "Runs locally" in javascript
+    assert 'button.classList.add("selected")' in javascript
+    assert 'button.setAttribute("aria-selected"' in javascript
+    assert "chooseModel(option.value)" in javascript
+    assert 'selectedModel.textContent = modelLabels[value] || value' in javascript
     assert 'setMenuOpen(false)' in javascript
 
 

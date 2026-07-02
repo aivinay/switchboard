@@ -98,6 +98,22 @@ The UI uses this stateful core path by default. The CLI should keep the session 
 display model, route, and user-facing answer easy to read while hiding raw context blocks
 unless `--show-metadata` was requested.
 
+## Web UI
+
+The local web UI keeps the same stateful core path as `switchboard ask`. Its model picker
+loads backend status from `GET /api/backends/status`, keeps Auto first, shows
+availability dots, and includes loaded Ollama models when the runtime can see them.
+
+Assistant messages show compact routing chips for backend, route type, privacy floor,
+tool grounding, compression, answer escalation, and quota influence. The `why?` panel
+continues to show the fuller routing reason.
+
+The topbar dashboard is fed by recorded backend metrics from `GET /api/dashboard`:
+premium calls avoided versus an always-premium baseline, estimated tokens saved,
+per-backend usage, and a last-7-days request trend. Quota meters read `GET /api/quota`
+and stay hidden when both soft budgets are unset. The composer shows a lock indicator
+when private mode is enabled.
+
 ## Usage And Feedback
 
 Usage summarizes request mix, estimated API spend, premium units saved, cache hits, and

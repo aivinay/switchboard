@@ -476,6 +476,21 @@ class BackendMetricsRepository:
             ).first()
             return backend_metric_to_read(record) if record else None
 
+    def list_since(
+        self,
+        *,
+        since: datetime,
+        limit: int = 5000,
+    ) -> list[BackendMetricRead]:
+        with Session(self.engine) as session:
+            statement = (
+                select(BackendMetricRecord)
+                .where(BackendMetricRecord.created_at >= since)
+                .order_by(desc(BackendMetricRecord.created_at))
+                .limit(limit)
+            )
+            return [backend_metric_to_read(record) for record in session.exec(statement).all()]
+
     def list(self, limit: int = 20) -> list[BackendMetricRead]:
         with Session(self.engine) as session:
             statement = (

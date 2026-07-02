@@ -5,20 +5,30 @@ const messages = document.querySelector("#messages");
 const modelButton = document.querySelector("#model-picker-button");
 const selectedModel = document.querySelector("#selected-model");
 const modelMenu = document.querySelector("#model-menu");
-const modelOptions = Array.from(document.querySelectorAll(".model-option"));
+const quotaMeters = document.querySelector("#quota-meters");
+const dashboard = document.querySelector("#dashboard");
+const dashboardToggle = document.querySelector("#dashboard-toggle");
+const privateMode = document.querySelector("#private-mode");
 const newChatButton = document.querySelector("#new-chat");
+const metricPremiumAvoided = document.querySelector("#metric-premium-avoided");
+const metricTokensSaved = document.querySelector("#metric-tokens-saved");
+const metricPremiumCalls = document.querySelector("#metric-premium-calls");
+const backendUsage = document.querySelector("#backend-usage");
+const trend = document.querySelector("#trend");
 const sessionStorageKey = "switchboard.session_id";
 
-const modelLabels = {
-  auto: "Auto",
-  codex: "Codex",
-  claude: "Claude",
-  ollama: "Ollama",
-};
+const fallbackModelOptions = [
+  { value: "auto", label: "Auto", description: "Routes automatically", available: true },
+  { value: "codex", label: "Codex", description: "Best for coding tasks", available: false },
+  { value: "claude", label: "Claude", description: "Good for reasoning and design", available: false },
+  { value: "ollama", label: "Ollama", description: "Runs locally", available: false },
+];
 
 let currentModel = "auto";
 let isSending = false;
 let sessionId = window.localStorage.getItem(sessionStorageKey) || null;
+let modelLabels = { auto: "Auto" };
+let modelOptions = [];
 
 /* ------------------------------------------------------------------ */
 /* Minimal safe markdown renderer (local-first: no CDN dependencies). */
@@ -182,14 +192,47 @@ function addAssistantMessage({ markdown, displayModel, routing }) {
   return { item, body };
 }
 
+function makeChip(label, tone = "neutral") {
+  const chip = document.createElement("span");
+  chip.className = `route-chip ${tone}`;
+  chip.textContent = label;
+  return chip;
+}
+
+function appendRoutingChips(meta, displayModel, routing) {
+  if (!routing) {
+    return;
+  }
+  const chips = document.createElement("span");
+  chips.className = "route-chips";
+  chips.appendChild(makeChip(displayModel || routing.backend || "Switchboard", "backend"));
+  if (routing.route_type) {
+    chips.appendChild(makeChip(routing.route_type, "route"));
+  }
+  if (routing.privacy_floor) {
+    chips.appendChild(makeChip("Lock", "privacy"));
+  }
+  if (routing.tool_grounded) {
+    chips.appendChild(makeChip("Tool", "tool"));
+  }
+  if (routing.compressed) {
+    const percent = routing.compression_percent;
+    chips.appendChild(makeChip(percent ? `Compressed ${percent}%` : "Compressed", "compressed"));
+  }
+  if (routing.escalated) {
+    chips.appendChild(makeChip("Escalated", "escalated"));
+  }
+  if (routing.quota) {
+    chips.appendChild(makeChip("Quota", "quota"));
+  }
+  meta.appendChild(chips);
+}
+
 function makeMetaRow(item, displayModel, routing) {
   const meta = document.createElement("div");
   meta.className = "message-meta";
 
-  const label = document.createElement("span");
-  label.className = "model-label";
-  label.textContent = displayModel || "Switchboard";
-  meta.appendChild(label);
+  appendRoutingChips(meta, displayModel, routing);
 
   if (routing && (routing.latency_ms || routing.cost_type)) {
     const facts = [];
@@ -345,7 +388,9 @@ async function loadHistory() {
         addAssistantMessage({
           markdown: message.content,
           displayModel: message.display_model,
-          routing: message.request_id ? { request_id: message.request_id } : null,
+          routing: message.request_id
+            ? { request_id: message.request_id, ...(message.routing || {}) }
+            : null,
         });
       }
     }
@@ -359,6 +404,109 @@ function startNewChat() {
   window.localStorage.removeItem(sessionStorageKey);
   messages.textContent = "";
   input.focus();
+}
+
+/* ------------------------------------------------------------------ */
+/* Dashboard                                                           */
+/* ------------------------------------------------------------------ */
+
+function formatNumber(value) {
+  return new Intl.NumberFormat().format(value || 0);
+}
+
+function renderQuotaMeters(payload) {
+  if (!quotaMeters || !payload || !payload.enabled) {
+    if (quotaMeters) {
+      quotaMeters.hidden = true;
+    }
+    return;
+  }
+  quotaMeters.textContent = "";
+  for (const backend of ["codex", "claude-code"]) {
+    const window = payload.windows?.[backend];
+    if (!window || window.budget === null || window.budget === undefined) {
+      continue;
+    }
+    const meter = document.createElement("div");
+    meter.className = "quota-meter";
+    const label = document.createElement("span");
+    label.textContent = `${window.label} ${window.used}/${window.budget}`;
+    const bar = document.createElement("span");
+    bar.className = "quota-bar";
+    const fill = document.createElement("span");
+    fill.style.width = `${Math.min(100, Math.round((window.used / window.budget) * 100))}%`;
+    if (window.constrained) {
+      fill.classList.add("constrained");
+    }
+    bar.appendChild(fill);
+    meter.appendChild(label);
+    meter.appendChild(bar);
+    quotaMeters.appendChild(meter);
+  }
+  quotaMeters.hidden = quotaMeters.children.length === 0;
+}
+
+function renderDashboard(payload) {
+  if (!payload) {
+    return;
+  }
+  metricPremiumAvoided.textContent = formatNumber(
+    payload.premium_calls_avoided_vs_always_premium
+  );
+  metricTokensSaved.textContent = formatNumber(payload.estimated_tokens_saved?.total);
+  metricPremiumCalls.textContent = formatNumber(payload.premium_calls);
+
+  backendUsage.textContent = "";
+  for (const [backend, count] of Object.entries(payload.usage_by_backend || {})) {
+    const item = document.createElement("span");
+    item.className = "usage-pill";
+    item.textContent = `${backend}: ${count}`;
+    backendUsage.appendChild(item);
+  }
+
+  trend.textContent = "";
+  const maxRequests = Math.max(1, ...((payload.last_7_days || []).map((day) => day.requests)));
+  for (const day of payload.last_7_days || []) {
+    const bar = document.createElement("span");
+    bar.className = "trend-bar";
+    bar.style.height = `${Math.max(6, Math.round((day.requests / maxRequests) * 44))}px`;
+    bar.title = `${day.date}: ${day.requests} requests, ${day.premium_calls} premium`;
+    trend.appendChild(bar);
+  }
+}
+
+async function loadQuotaStatus() {
+  try {
+    const response = await fetch("/api/quota");
+    if (response.ok) {
+      renderQuotaMeters(await response.json());
+    }
+  } catch {
+    if (quotaMeters) {
+      quotaMeters.hidden = true;
+    }
+  }
+}
+
+async function loadDashboard() {
+  try {
+    const response = await fetch("/api/dashboard");
+    if (response.ok) {
+      renderDashboard(await response.json());
+    }
+  } catch {
+    /* dashboard is best-effort */
+  }
+}
+
+function toggleDashboard() {
+  const nextHidden = !dashboard.hidden;
+  dashboard.hidden = nextHidden;
+  dashboardToggle.setAttribute("aria-expanded", String(!nextHidden));
+  if (!nextHidden) {
+    loadDashboard();
+    loadQuotaStatus();
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -468,6 +616,11 @@ async function sendMessage() {
   } finally {
     isSending = false;
     updateSendState();
+    loadBackendStatus();
+    loadQuotaStatus();
+    if (dashboard && !dashboard.hidden) {
+      loadDashboard();
+    }
     input.focus();
   }
 }
@@ -481,9 +634,70 @@ function setMenuOpen(open) {
   modelButton.setAttribute("aria-expanded", String(open));
 }
 
+function renderModelOptions(options) {
+  modelLabels = {};
+  modelMenu.textContent = "";
+  modelOptions = [];
+  for (const option of options) {
+    modelLabels[option.value] = option.label;
+    const button = document.createElement("button");
+    button.className = "model-option";
+    button.type = "button";
+    button.role = "option";
+    button.dataset.model = option.value;
+    button.setAttribute("aria-selected", String(option.value === currentModel));
+    if (option.value === currentModel) {
+      button.classList.add("selected");
+    }
+    const text = document.createElement("span");
+    const title = document.createElement("strong");
+    title.textContent = option.label;
+    const detail = document.createElement("small");
+    const hot = Array.isArray(option.hot_models) && option.hot_models.length
+      ? ` Hot: ${option.hot_models.join(", ")}`
+      : "";
+    detail.textContent = `${option.description || ""}${hot}`;
+    text.appendChild(title);
+    text.appendChild(detail);
+    const status = document.createElement("span");
+    status.className = `availability-dot ${option.available ? "available" : "unavailable"}`;
+    status.title = option.available ? "Available" : option.warning || "Unavailable";
+    const check = document.createElement("span");
+    check.className = "checkmark";
+    check.setAttribute("aria-hidden", "true");
+    check.textContent = "✓";
+    const right = document.createElement("span");
+    right.className = "option-state";
+    right.appendChild(status);
+    right.appendChild(check);
+    button.appendChild(text);
+    button.appendChild(right);
+    button.addEventListener("click", () => chooseModel(option.value));
+    modelMenu.appendChild(button);
+    modelOptions.push(button);
+  }
+  selectedModel.textContent = modelLabels[currentModel] || "Auto";
+}
+
+async function loadBackendStatus() {
+  try {
+    const response = await fetch("/api/backends/status");
+    if (!response.ok) {
+      throw new Error("backend status unavailable");
+    }
+    const payload = await response.json();
+    renderModelOptions(payload.options || fallbackModelOptions);
+    if (privateMode) {
+      privateMode.hidden = !payload.private_mode;
+    }
+  } catch {
+    renderModelOptions(fallbackModelOptions);
+  }
+}
+
 function chooseModel(value) {
   currentModel = value;
-  selectedModel.textContent = modelLabels[value];
+  selectedModel.textContent = modelLabels[value] || value;
   for (const option of modelOptions) {
     const isSelected = option.dataset.model === value;
     option.classList.toggle("selected", isSelected);
@@ -505,10 +719,8 @@ modelButton.addEventListener("click", () => {
   setMenuOpen(modelMenu.hidden);
 });
 
-for (const option of modelOptions) {
-  option.addEventListener("click", () => {
-    chooseModel(option.dataset.model);
-  });
+if (dashboardToggle) {
+  dashboardToggle.addEventListener("click", toggleDashboard);
 }
 
 if (newChatButton) {
@@ -543,6 +755,9 @@ input.addEventListener("keydown", (event) => {
   }
 });
 
+renderModelOptions(fallbackModelOptions);
 resizeInput();
 updateSendState();
+loadBackendStatus();
+loadQuotaStatus();
 loadHistory();

@@ -158,6 +158,30 @@ Tests:
 - Focused quota/core/UI tests: 129 passed.
 - Phase check: `make check`, 679 collected, passed.
 
+### Phase 8 - UI upgrade
+
+Status: done.
+
+- Added UI-only backend status and dashboard endpoints:
+  `GET /api/backends/status` and `GET /api/dashboard`.
+- Kept `POST /api/chat` compact while enriching streaming and history metadata
+  for routing chips.
+- Replaced the hardcoded model menu with a dynamic picker that keeps Auto first,
+  shows availability dots, and displays hot Ollama models when visible.
+- Added assistant routing chips for backend, route type, privacy floor, tool
+  grounding, compression, escalation, and quota influence.
+- Added a topbar savings dashboard fed by recorded backend metrics, compact
+  quota meters fed by `/api/quota`, and a private-mode lock indicator in the
+  composer.
+- Kept the UI vanilla JS/CSS with no frontend dependencies or CDNs.
+
+Tests:
+
+- Focused UI tests: 34 passed.
+- Phase check: `make check`, 681 collected, passed.
+- Local UI smoke: `GET /ui`, `/api/backends/status`, `/api/dashboard`, and
+  `/api/quota` returned 200 on `127.0.0.1:8765`.
+
 ## Manual Follow-Ups
 
 Recommended 2026 local pulls:
@@ -245,6 +269,12 @@ switchboard quota
 switchboard quota --format json
 ```
 
+Run the local web UI:
+
+```bash
+switchboard ui
+```
+
 ## Draft PR Description
 
 ### Summary
@@ -267,6 +297,8 @@ privacy floor and local-first routing guarantees.
   heuristic fallback.
 - Phase 7: local premium quota ledger, soft-budget-aware premium rerouting, and
   CLI/UI quota surfaces.
+- Phase 8: dependency-free web UI dashboard, dynamic picker, route chips,
+  quota meters, and private-mode affordance.
 
 ### Test Evidence
 
@@ -278,6 +310,7 @@ privacy floor and local-first routing guarantees.
 - Phase 5: `make check`, 667 tests collected, all passed.
 - Phase 6: `make check`, 671 tests collected, all passed.
 - Phase 7: `make check`, 679 tests collected, all passed.
+- Phase 8: `make check`, 681 tests collected, all passed.
 
 ### Invariant Checklist
 
@@ -289,6 +322,8 @@ privacy floor and local-first routing guarantees.
   to the dependency-free heuristic.
 - Quota-aware routing only affects already-premium preferred routes after privacy and
   tool policy, and never upgrades local routes to premium.
+- UI dashboard and chips are derived from recorded metadata and do not expose prompt or
+  response bodies through metrics endpoints.
 - Telemetry remains metadata-only.
 - README benchmark numbers, evaluation claims, and DOI references were not changed.
 - New runtime dependencies were not added to the core install.

@@ -25,6 +25,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   dependency-free heuristic as the default.
 - Added a local, estimate-only premium quota ledger with user-declared soft
   budgets, quota-aware premium routing, `switchboard quota`, and `/api/quota`.
+- Added the dependency-free web UI upgrade: dynamic backend picker, routing
+  chips, private-mode indicator, quota meters, and a savings dashboard fed by
+  recorded metrics.
 
 ### Fixed
 - Made `switchboard route` previews honor private mode when Ollama is
