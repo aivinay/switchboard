@@ -480,3 +480,43 @@ privacy floor and local-first routing guarantees.
 - Telemetry remains metadata-only.
 - README benchmark numbers, evaluation claims, and DOI references were not changed.
 - New runtime dependencies were not added to the core install.
+
+## Track 2 - UI Defect Fixes
+
+Branch: `feat/ui-defect-fixes`
+
+Status: done.
+
+- Added shared UI state and a single dismissable overlay stack for menus, feedback
+  popovers, privacy status, and the savings drawer.
+- Reworked web feedback into a reversible state machine: good/bad/wrong-model ratings
+  are mutually exclusive, wrong-model corrections store `corrected_backend`, re-rating
+  upserts by request, and retraction deletes feedback plus pending training examples.
+- Added honest feedback ack copy, pending-correction counts, `feedback_auto_retrain`,
+  `DELETE /api/chat/feedback/{request_id}`, and `GET /api/feedback/pending`.
+- Added the web UI privacy-floor status and persisted Private chat toggle. Private
+  chat is stored on `ChatSessionRecord.private`, restored by history, forces Ollama
+  from both client intent and stored session state, and never falls through to premium
+  when Ollama is unavailable.
+- Added `PATCH /api/sessions/{session_id}` and a reusable remote mutation guard.
+  Session updates and feedback retraction return `403` for non-loopback clients unless
+  `SWITCHBOARD_ALLOW_REMOTE_MUTATIONS=1`; `switchboard ui` warns when bound to a
+  non-loopback host.
+- Moved Savings into a right-side dismissable drawer outside the `.shell` grid. The
+  drawer shows premium calls avoided, local/tool/premium mix, quota windows or setup
+  teaser, compression/routing token estimates, 7-day trend segments, and feedback
+  quality counts without dollar figures.
+
+DoD evidence:
+
+- Feedback state machine: focused feedback/UI tests passed
+  (`tests/test_feedback_loop.py`, `tests/test_ui_v2.py`, `tests/test_ui_api.py`);
+  full `make check` passed after the feedback phase.
+- Privacy affordances and guard: `tests/test_ui_api.py` covers private-chat forced
+  Ollama routing, stored-session restore, Ollama-down no-premium-fallback behavior,
+  loopback guard allowance, non-loopback `403`, and env override; full `make check`
+  passed after the privacy phase.
+- Savings drawer: `tests/test_ui_api.py` covers dashboard handled counts, feedback
+  counts, trend segment fields, static drawer placement outside `main.shell`, and
+  drawer overlay wiring; full `make check` passed after the drawer phase.
+- Final branch check: `make check`, 728 tests collected, passed with 5 skips.
