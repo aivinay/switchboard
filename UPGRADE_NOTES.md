@@ -225,6 +225,47 @@ Tests:
 - Focused recommendation tests: 7 passed.
 - Phase check: `make check`, 683 collected, passed.
 
+### Phase C - real-backend validation
+
+Status: done.
+
+- Exercised the real Ollama, Codex, and Claude Code backends available on this
+  machine.
+- Confirmed the privacy floor, embedding-model fail-closed path, live
+  answer-confidence escalation, configured provider smoke tests, and UI
+  telemetry endpoints.
+- Fixed one validation-discovered stale real-smoke expectation:
+  `real_time_india` now expects the deterministic time tool to route through
+  Ollama local formatting instead of Claude Code.
+- Reverted all temporary `config/personal.yaml` validation edits and ran
+  `make sync-config` after each config flip.
+
+Tests:
+
+- Focused eval tests: `python -m pytest tests/test_evals.py -q`, 23 passed.
+- Real smoke after fix: `switchboard eval-real-smoke --fast --timeout 180`,
+  11/11 passed.
+- Provider smoke: `switchboard eval-real-providers --timeout 180`, 3/5 passed
+  and 2/5 not verified because the web provider is not configured.
+- Phase check after the validation fix: `make check`, 684 collected, passed.
+
+## Validation
+
+| Step | Commands | Observed result |
+| --- | --- | --- |
+| Environment survey | `ollama list`; `switchboard doctor`; `switchboard backends`; `switchboard models --recommend` | Ollama is reachable with `embeddinggemma`, `llama3.2:3b`, `nomic-embed-text`, and legacy local models installed. Core backends `ollama`, `codex`, and `claude-code` are available. News is configured through Google News RSS and finance through Yahoo; direct web search is not configured. RAM detected as 32.0 GiB, recommending the 32gb pack: `gemma4:12b`, `qwen3.5:9b`, `gpt-oss:20b`, and `embeddinggemma`. No recommendation pulls were automatic. |
+| Embedding pull | `ollama pull embeddinggemma`; `ollama list` | Pulled `embeddinggemma` at 621 MB, under the 1 GB approval threshold, and confirmed it is installed. |
+| Default learned routing and semantic memory | `switchboard route "Debug this failing Python pytest traceback" --debug`; `switchboard memory add ... --project validation`; `switchboard memory search ... --project validation` | Default `nomic-embed-text` learned routing classified the coding prompt as `coding` with confidence 1.00 and selected Codex. Semantic memory indexed a validation item and close semantic searches returned the stored item. |
+| Embedding preference mismatch | Temporarily set `preferences.embedding_model: "embeddinggemma"`, ran `make sync-config`, then `switchboard route "Debug this failing Python pytest traceback" --debug` | Router, tool-dispatcher, and sensitivity weights reported they were trained with `nomic-embed-text`; Switchboard fell closed to deterministic routing with no crash. Preference was reverted to `nomic-embed-text` and synced. |
+| Privacy invariant with Ollama up | `switchboard route "my ssn is 123-45-6789, summarize this medical record" --debug`; `switchboard ask --backend auto --show-metadata --timeout 120 ...` | Route preview selected Ollama with the private-mode sensitive-content reason. The live answer came from `ollama/llama3.2:3b`, cost type `local`, with no premium escalation. |
+| Live answer-confidence escalation | Temporarily set `escalation_enabled: true`; ran `switchboard route ... --debug`; `switchboard ask --backend auto --show-metadata --timeout 180 "Please answer carefully: how should projection lag interact with deletion semantics in a stateful notes app?"` | The prompt routed locally first. The confidence check scored the local answer at 0.20 below the 0.55 threshold and escalated once to `claude-code` with the documented routing reason. |
+| Sensitive low-confidence behavior | Temporarily set `escalation_enabled: true` and `escalation_confidence_threshold: 1.01`; ran `switchboard ask --backend auto --show-metadata --timeout 180 "my ssn is 123-45-6789, summarize this medical record and explain any uncertainty carefully"` | The response stayed on `ollama/llama3.2:3b`, appended the honest local-confidence note, and recorded that private mode blocked premium escalation. Escalation settings were reverted and synced. |
+| Arch-Router optional validation | Not run | Skipped pending explicit approval because `hf.co/katanemo/Arch-Router-1.5B.gguf` is over 1 GB. |
+| Real smoke suite | `switchboard eval-real-smoke --fast --timeout 180` | First run found one stale eval expectation: `real_time_india` expected Claude Code but deterministic time-tool formatting correctly used Ollama. Fixed the fixture with a regression test, then reran: 11/11 passed, 0 failed, 0 timed out, 0 skipped, 0 not verified. |
+| Real provider suite | `switchboard eval-real-providers --timeout 180` | 3/5 passed with configured providers; `provider_web_brave` and `provider_web_grounding` were not verified because the direct web provider is not configured. |
+| Headroom optional validation | Not run | Skipped pending explicit approval because it installs the optional `switchboard-local[headroom]` extra into the venv. |
+| UI validation | `switchboard ui --host 127.0.0.1 --port 8765`; `curl http://127.0.0.1:8765/ui`; `curl http://127.0.0.1:8765/api/backends/status`; `curl -X POST http://127.0.0.1:8765/api/chat ...`; `curl http://127.0.0.1:8765/api/dashboard` | `/ui` rendered over GET. The dynamic picker reported Auto and Ollama available, Codex and Claude gated by HTTP CLI opt-in, and hot local models populated. A forced Ollama UI chat returned `OK.` from backend `ollama`. Dashboard totals populated from real backend metrics. Server was stopped after validation. |
+
 ## Manual Follow-Ups
 
 Recommended 2026 local pulls:
