@@ -60,7 +60,7 @@ def load_jsonl(path: str | Path) -> list[RouterExample]:
 def _ollama_embed_factory(base_url: str, model: str) -> Callable[[str], list[float]]:
     from switchboard.app.services.semantic_memory import OllamaEmbeddingClient
 
-    return OllamaEmbeddingClient(base_url=base_url, model=model).embed
+    return OllamaEmbeddingClient(base_url=base_url, model=model).embed_classification
 
 
 # Relative trust per example source. Hand-labeled and user-corrected examples

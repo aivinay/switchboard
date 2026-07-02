@@ -21,6 +21,7 @@ the concrete tool; if none fires, policy treats it as ``local``.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import time
 from collections.abc import Callable
@@ -38,6 +39,9 @@ BACKEND_BY_ROUTE_TYPE = {
     "coding": "codex",
     "reasoning": "claude-code",
 }
+
+LOGGER = logging.getLogger(__name__)
+_LOGGED_WEIGHT_WARNINGS: set[str] = set()
 
 
 @dataclass(frozen=True)
@@ -66,9 +70,14 @@ class RouterWeights:
     metadata: dict[str, object]
 
     @classmethod
-    def from_file(cls, path: str | Path) -> RouterWeights:
+    def from_file(
+        cls,
+        path: str | Path,
+        *,
+        expected_embedding_model: str | None = None,
+    ) -> RouterWeights | None:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls(
+        weights = cls(
             classes=tuple(data["classes"]),
             embedding_model=data.get("embedding_model", "nomic-embed-text"),
             dim=int(data["dim"]),
@@ -78,6 +87,27 @@ class RouterWeights:
             bias=[float(x) for x in data["bias"]],
             metadata=dict(data.get("metadata", {})),
         )
+        if expected_embedding_model and not _same_embedding_model(
+            weights.embedding_model,
+            expected_embedding_model,
+        ):
+            _log_weight_warning_once(
+                str(path),
+                (
+                    f"weights were trained with {weights.embedding_model!r}, "
+                    f"but configured embedder is {expected_embedding_model!r}; "
+                    "falling back to deterministic routing"
+                ),
+            )
+            return None
+        if not weights.shape_is_consistent():
+            _log_weight_warning_once(
+                str(path),
+                "weights shape does not match recorded embedding dimension; "
+                "falling back to deterministic routing",
+            )
+            return None
+        return weights
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -90,6 +120,25 @@ class RouterWeights:
             "bias": self.bias,
             "metadata": self.metadata,
         }
+
+    def shape_is_consistent(self) -> bool:
+        if len(self.mean) != self.dim or len(self.std) != self.dim:
+            return False
+        if any(len(row) != self.dim for row in self.weights):
+            return False
+        return len(self.weights) == len(self.classes) and len(self.bias) == len(self.classes)
+
+
+def _same_embedding_model(left: str, right: str) -> bool:
+    return left.strip().lower() == right.strip().lower()
+
+
+def _log_weight_warning_once(path: str, message: str) -> None:
+    key = f"{path}:{message}"
+    if key in _LOGGED_WEIGHT_WARNINGS:
+        return
+    _LOGGED_WEIGHT_WARNINGS.add(key)
+    LOGGER.warning("%s: %s", path, message)
 
 
 def softmax(scores: list[float]) -> list[float]:
@@ -141,7 +190,7 @@ class LearnedRouter:
             self._embed = OllamaEmbeddingClient(
                 base_url=base_url,
                 model=weights.embedding_model,
-            ).embed
+            ).embed_classification
 
     @classmethod
     def from_file(
@@ -151,12 +200,19 @@ class LearnedRouter:
         embed: Callable[[str], list[float]] | None = None,
         base_url: str = "http://localhost:11434",
         min_confidence: float = 0.55,
+        expected_embedding_model: str | None = None,
     ) -> LearnedRouter | None:
         weights_path = Path(path)
         if not weights_path.exists():
             return None
+        weights = RouterWeights.from_file(
+            weights_path,
+            expected_embedding_model=expected_embedding_model,
+        )
+        if weights is None:
+            return None
         return cls(
-            weights=RouterWeights.from_file(weights_path),
+            weights=weights,
             embed=embed,
             base_url=base_url,
             min_confidence=min_confidence,

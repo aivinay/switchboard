@@ -13,6 +13,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added the 2026 Ollama model pack, hardware-aware `switchboard models
   --recommend`, and explicit local role mappings for general, coding, and
   reasoning routes.
+- Added embedding-model-aware learned routing, dispatcher, sensitivity, and
+  semantic-memory embedding calls, including task prefixes and fail-closed
+  weight metadata checks.
 
 ### Fixed
 - Made `switchboard route` previews honor private mode when Ollama is

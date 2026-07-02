@@ -99,7 +99,7 @@ class LearnedToolDispatcher:
             self._embed = OllamaEmbeddingClient(
                 base_url=base_url,
                 model=weights.embedding_model,
-            ).embed
+            ).embed_classification
 
     @classmethod
     def from_file(
@@ -109,12 +109,19 @@ class LearnedToolDispatcher:
         embed: Callable[[str], list[float]] | None = None,
         base_url: str = "http://localhost:11434",
         min_confidence: float = 0.8,
+        expected_embedding_model: str | None = None,
     ) -> LearnedToolDispatcher | None:
         weights_path = Path(path)
         if not weights_path.exists():
             return None
+        weights = RouterWeights.from_file(
+            weights_path,
+            expected_embedding_model=expected_embedding_model,
+        )
+        if weights is None:
+            return None
         return cls(
-            weights=RouterWeights.from_file(weights_path),
+            weights=weights,
             embed=embed,
             base_url=base_url,
             min_confidence=min_confidence,

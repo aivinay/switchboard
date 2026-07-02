@@ -50,6 +50,29 @@ Tests:
 
 - Phase check: `make check`, 653 collected, passed.
 
+### Phase 3 - embedding upgrade path for learned components
+
+Status: done.
+
+- Kept `preferences.embedding_model` as the first-class embedding preference and
+  made training commands use it by default when `--embedding-model` is omitted.
+- Added task-specific embedding calls:
+  `classification:` for Nomic classifier inputs, `search_document:` for indexed
+  memories, and `search_query:` for memory retrieval queries, with explicit
+  `num_ctx` for Nomic requests.
+- Added instruction-style prompts for `qwen3-embedding:0.6b`.
+- Added weight metadata checks so learned router, dispatcher, and sensitivity
+  weights fail closed when the configured embedding model differs from the
+  recorded training embedder. Runtime vector dimension mismatches also continue
+  to fail closed.
+- Did not retrain or ship new weights.
+
+Tests:
+
+- Focused Phase 3 tests: embeddings, learned router, tool dispatcher, and
+  training-command unavailable paths passed.
+- Phase check: `make check`, 657 collected, passed.
+
 ## Manual Follow-Ups
 
 Recommended 2026 local pulls:
@@ -78,6 +101,18 @@ ollama pull qwen3-embedding:0.6b
 Run `switchboard models --recommend --apply` to update local role mappings after
 reviewing the recommendation. Add `--yes` only for noninteractive automation.
 
+Retrain learned weights after changing `preferences.embedding_model`:
+
+```bash
+switchboard train-router --embedding-model embeddinggemma --output config/router_weights.json
+switchboard train-dispatcher --embedding-model embeddinggemma --output config/tool_dispatcher_weights.json
+switchboard train-sensitivity --embedding-model embeddinggemma --output config/sensitivity_weights.json
+
+switchboard train-router --embedding-model qwen3-embedding:0.6b --output config/router_weights.json
+switchboard train-dispatcher --embedding-model qwen3-embedding:0.6b --output config/tool_dispatcher_weights.json
+switchboard train-sensitivity --embedding-model qwen3-embedding:0.6b --output config/sensitivity_weights.json
+```
+
 ## Draft PR Description
 
 ### Summary
@@ -91,12 +126,15 @@ privacy floor and local-first routing guarantees.
   and config-tree drift prevention.
 - Phase 2: 2026 local model catalogue, hardware-aware pack recommendation, explicit
   local role mappings, and updated local-model documentation.
+- Phase 3: first-class embedding preference for learned components and semantic
+  memory, task-specific embedding prompts, and fail-closed weight metadata checks.
 
 ### Test Evidence
 
 - Baseline before changes: `make install && make check`, 644 tests collected, all passed.
 - Phase 1: `make check`, 648 tests collected, all passed.
 - Phase 2: `make check`, 653 tests collected, all passed.
+- Phase 3: `make check`, 657 tests collected, all passed.
 
 ### Invariant Checklist
 

@@ -36,6 +36,7 @@ def build_semantic_memory(
     container: ServiceContainer,
     *,
     embed: Callable[[str], list[float]] | None = None,
+    query_embed: Callable[[str], list[float]] | None = None,
 ) -> SemanticMemoryService:
     preferences = container.personal_config.preferences
     ollama_base_url = (
@@ -45,6 +46,7 @@ def build_semantic_memory(
         memory_repository=container.memory_repository,
         embedding_repository=MemoryEmbeddingRepository(container.memory_repository.engine),
         embed=embed,
+        query_embed=query_embed,
         embedding_model=preferences.embedding_model,
         base_url=ollama_base_url,
         top_k=preferences.semantic_memory_top_k,
@@ -73,12 +75,11 @@ def build_configured_core_service(
     # embedded once per request instead of once per component. Components
     # whose weights were trained with a different embedding model fail closed
     # on the dimension check and fall back to their deterministic paths.
-    shared_embed = CachedEmbedder(
-        OllamaEmbeddingClient(
-            base_url=ollama_base_url,
-            model=preferences.embedding_model,
-        ).embed
-    ).embed
+    embedding_client = OllamaEmbeddingClient(
+        base_url=ollama_base_url,
+        model=preferences.embedding_model,
+    )
+    shared_embed = CachedEmbedder(embedding_client.embed_classification).embed
 
     effective_router_mode = router_mode or preferences.router_mode
     llm_router = None
@@ -94,6 +95,7 @@ def build_configured_core_service(
             preferences.router_weights_path,
             embed=shared_embed,
             min_confidence=preferences.learned_router_min_confidence,
+            expected_embedding_model=preferences.embedding_model,
         )
         if learned_router is None:
             # No trained weights yet: fall back to deterministic rules so the
@@ -108,6 +110,7 @@ def build_configured_core_service(
             preferences.tool_dispatcher_weights_path,
             embed=shared_embed,
             min_confidence=preferences.tool_dispatcher_min_confidence,
+            expected_embedding_model=preferences.embedding_model,
         )
 
     sensitivity_escalator = None
@@ -118,6 +121,7 @@ def build_configured_core_service(
             preferences.sensitivity_weights_path,
             embed=shared_embed,
             min_confidence=preferences.sensitivity_escalator_min_confidence,
+            expected_embedding_model=preferences.embedding_model,
         )
 
     compression_enabled = (
@@ -133,7 +137,13 @@ def build_configured_core_service(
         semantic_memory if semantic_memory is not None else preferences.semantic_memory_enabled
     )
     memory_service = (
-        build_semantic_memory(container, embed=shared_embed) if memory_enabled else None
+        build_semantic_memory(
+            container,
+            embed=CachedEmbedder(embedding_client.embed_document).embed,
+            query_embed=CachedEmbedder(embedding_client.embed_query).embed,
+        )
+        if memory_enabled
+        else None
     )
 
     # Live-data tools configured in personal.yaml (fall back to env-based

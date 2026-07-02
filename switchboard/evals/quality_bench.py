@@ -423,6 +423,7 @@ class QualityBenchRunner:
                 preferences.router_weights_path,
                 base_url=ollama_base_url,
                 min_confidence=preferences.learned_router_min_confidence,
+                expected_embedding_model=preferences.embedding_model,
             )
         # The learned tool dispatcher and sensitivity escalator are product
         # defaults; benchmark conditions measure the system WITH them (they
@@ -446,19 +447,21 @@ class QualityBenchRunner:
                 OllamaEmbeddingClient(
                     base_url=ollama_base_url,
                     model=preferences.embedding_model,
-                ).embed
+                ).embed_classification
             ).embed
             if preferences.tool_dispatcher_enabled:
                 tool_dispatcher = LearnedToolDispatcher.from_file(
                     preferences.tool_dispatcher_weights_path,
                     embed=shared_embed,
                     min_confidence=preferences.tool_dispatcher_min_confidence,
+                    expected_embedding_model=preferences.embedding_model,
                 )
             if preferences.sensitivity_escalator_enabled:
                 sensitivity_escalator = LearnedSensitivityEscalator.from_file(
                     preferences.sensitivity_weights_path,
                     embed=shared_embed,
                     min_confidence=preferences.sensitivity_escalator_min_confidence,
+                    expected_embedding_model=preferences.embedding_model,
                 )
         return SwitchboardCoreService(
             registry=registry,

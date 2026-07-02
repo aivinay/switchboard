@@ -964,6 +964,14 @@ def _embedding_unavailable_exit(model: str) -> SystemExit:
     )
 
 
+def configured_embedding_model(cli_value: str | None) -> str:
+    if cli_value:
+        return cli_value
+    settings = get_settings()
+    config = PersonalConfig.from_yaml(settings.personal_config_path)
+    return config.preferences.embedding_model
+
+
 def train_router_command(args: argparse.Namespace) -> None:
     from switchboard.training.augment import augment_examples
     from switchboard.training.router_dataset import (
@@ -1000,15 +1008,16 @@ def train_router_command(args: argparse.Namespace) -> None:
         print(f"Built dataset: {len(examples)} examples -> {dataset_path}")
         print(f"Class counts: {class_counts(examples)}")
 
+    embedding_model = configured_embedding_model(args.embedding_model)
     print("Embedding and training (requires Ollama embedding model)...", flush=True)
     try:
         report = train_from_files(
             dataset_path=dataset_path,
             output_path=args.output,
-            embedding_model=args.embedding_model,
+            embedding_model=embedding_model,
         )
     except (EmbeddingUnavailableError, httpx.HTTPError) as exc:
-        raise _embedding_unavailable_exit(args.embedding_model) from exc
+        raise _embedding_unavailable_exit(embedding_model) from exc
     print(report_to_text(report, args.output))
 
 
@@ -1026,20 +1035,21 @@ def train_dispatcher_command(args: argparse.Namespace) -> None:
     print(f"Dataset: {len(examples)} examples")
     print(f"Class counts: {class_counts(examples)}")
 
+    embedding_model = configured_embedding_model(args.embedding_model)
     print("Embedding and training (requires Ollama embedding model)...", flush=True)
     from switchboard.app.services.semantic_memory import OllamaEmbeddingClient
 
-    embed = OllamaEmbeddingClient(model=args.embedding_model).embed
+    embed = OllamaEmbeddingClient(model=embedding_model).embed_classification
     try:
         weights, report = train(
             examples,
             embed=embed,
-            embedding_model=args.embedding_model,
+            embedding_model=embedding_model,
             classes=TOOL_CLASSES,
             golden=dispatcher_golden_examples(),
         )
     except (EmbeddingUnavailableError, httpx.HTTPError) as exc:
-        raise _embedding_unavailable_exit(args.embedding_model) from exc
+        raise _embedding_unavailable_exit(embedding_model) from exc
     weights.metadata["golden_accuracy"] = report.golden_accuracy
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -1062,20 +1072,21 @@ def train_sensitivity_command(args: argparse.Namespace) -> None:
     print(f"Dataset: {len(examples)} examples")
     print(f"Class counts: {class_counts(examples)}")
 
+    embedding_model = configured_embedding_model(args.embedding_model)
     print("Embedding and training (requires Ollama embedding model)...", flush=True)
     from switchboard.app.services.semantic_memory import OllamaEmbeddingClient
 
-    embed = OllamaEmbeddingClient(model=args.embedding_model).embed
+    embed = OllamaEmbeddingClient(model=embedding_model).embed_classification
     try:
         weights, report = train(
             examples,
             embed=embed,
-            embedding_model=args.embedding_model,
+            embedding_model=embedding_model,
             classes=SENSITIVITY_CLASSES,
             golden=sensitivity_golden_examples(),
         )
     except (EmbeddingUnavailableError, httpx.HTTPError) as exc:
-        raise _embedding_unavailable_exit(args.embedding_model) from exc
+        raise _embedding_unavailable_exit(embedding_model) from exc
     weights.metadata["golden_accuracy"] = report.golden_accuracy
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -1570,7 +1581,10 @@ def make_parser() -> argparse.ArgumentParser:
     train_router.add_argument(
         "--output", default="config/router_weights.json", help="Weights output path"
     )
-    train_router.add_argument("--embedding-model", default="nomic-embed-text")
+    train_router.add_argument(
+        "--embedding-model",
+        help="Embedding model for training (default: preferences.embedding_model)",
+    )
     train_router.add_argument(
         "--external",
         action="store_true",
@@ -1596,7 +1610,10 @@ def make_parser() -> argparse.ArgumentParser:
         default="config/tool_dispatcher_weights.json",
         help="Weights output path",
     )
-    train_dispatcher.add_argument("--embedding-model", default="nomic-embed-text")
+    train_dispatcher.add_argument(
+        "--embedding-model",
+        help="Embedding model for training (default: preferences.embedding_model)",
+    )
     train_dispatcher.set_defaults(func=train_dispatcher_command)
 
     train_sensitivity = subparsers.add_parser(
@@ -1608,7 +1625,10 @@ def make_parser() -> argparse.ArgumentParser:
         default="config/sensitivity_weights.json",
         help="Weights output path",
     )
-    train_sensitivity.add_argument("--embedding-model", default="nomic-embed-text")
+    train_sensitivity.add_argument(
+        "--embedding-model",
+        help="Embedding model for training (default: preferences.embedding_model)",
+    )
     train_sensitivity.set_defaults(func=train_sensitivity_command)
 
     feedback_examples = subparsers.add_parser(
