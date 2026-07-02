@@ -13,6 +13,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added the 2026 Ollama model pack, hardware-aware `switchboard models
   --recommend`, and explicit local role mappings for general, coding, and
   reasoning routes.
+- Added a sub-12 GiB floor tier for `switchboard models --recommend` so tiny
+  machines get `llama3.2:3b` instead of heavier 16 GiB recommendations.
 - Added embedding-model-aware learned routing, dispatcher, sensitivity, and
   semantic-memory embedding calls, including task prefixes and fail-closed
   weight metadata checks.

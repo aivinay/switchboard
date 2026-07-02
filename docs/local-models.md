@@ -30,6 +30,18 @@ ollama pull embeddinggemma
 ollama pull nomic-embed-text
 ```
 
+On machines below roughly 12 GiB of RAM, `switchboard models --recommend` uses a
+minimal floor tier:
+
+```bash
+ollama pull llama3.2:3b
+ollama pull embeddinggemma
+```
+
+That tier maps general, coding, and reasoning roles to `ollama/llama3.2:3b`. Heavier
+local models need more RAM, so quota-aware routing to Codex or Claude Code matters more
+on very small machines.
+
 Stronger machines can also pull heavier variants:
 
 ```bash

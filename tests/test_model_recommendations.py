@@ -29,9 +29,27 @@ def test_ram_detection_parsers() -> None:
 
 def test_ram_tier_mapping() -> None:
     assert ram_tier(None) == "16gb"
+    assert ram_tier(int(3.8 * GIB)) == "floor"
+    assert ram_tier(11 * GIB) == "floor"
+    assert ram_tier(12 * GIB) == "16gb"
     assert ram_tier(16 * GIB) == "16gb"
     assert ram_tier(32 * GIB) == "32gb"
     assert ram_tier(64 * GIB) == "48gb"
+
+
+def test_floor_tier_uses_minimal_local_chat_pack() -> None:
+    catalogue = ModelCatalogue.from_yaml(ROOT / "config" / "models.yaml")
+
+    recommendation = recommend_local_model_pack(catalogue, total_ram_bytes=int(3.8 * GIB))
+
+    assert recommendation.tier == "floor"
+    by_role = {role.role: role.model_id for role in recommendation.roles}
+    assert by_role["general"] == "ollama/llama3.2:3b"
+    assert by_role["coding"] == "ollama/llama3.2:3b"
+    assert by_role["reasoning"] == "ollama/llama3.2:3b"
+    assert by_role["embeddings"] == "ollama/embeddinggemma"
+    assert any("heavier local models need more RAM" in note for note in recommendation.notes)
+    assert "ollama pull gpt-oss:20b" not in recommendation.pull_commands
 
 
 def test_recommendations_exclude_disabled_and_embedding_models_for_chat_roles() -> None:
@@ -102,3 +120,30 @@ def test_models_recommend_cli_prints_pull_commands(
     assert "general" in output
     assert "ollama pull gemma4:12b" in output
     assert "No models were pulled automatically." in output
+
+
+def test_models_recommend_cli_prints_floor_tier_note(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    personal_path = tmp_path / "personal.yaml"
+    models_path = tmp_path / "models.yaml"
+    personal_path.write_text((ROOT / "config" / "personal.yaml").read_text(encoding="utf-8"))
+    models_path.write_text((ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'switchboard.db'}",
+        personal_config_path=str(personal_path),
+        models_config_path=str(models_path),
+    )
+
+    monkeypatch.setattr("switchboard.cli.get_settings", lambda: settings)
+    monkeypatch.setattr("switchboard.cli.detect_total_ram_bytes", lambda: int(3.8 * GIB))
+
+    models_command(argparse.Namespace(recommend=True, apply=False, yes=False))
+
+    output = capsys.readouterr().out
+    assert "Detected RAM: 3.8 GiB (floor tier)" in output
+    assert "ollama pull llama3.2:3b" in output
+    assert "ollama pull gpt-oss:20b" not in output
+    assert "heavier local models need more RAM" in output

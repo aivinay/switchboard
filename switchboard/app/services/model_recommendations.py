@@ -12,6 +12,11 @@ from switchboard.app.models.catalogue import ModelCatalogue, ModelKind, ModelPro
 GIB = 1024**3
 
 CHAT_ROLE_CANDIDATES: dict[str, dict[str, list[str]]] = {
+    "floor": {
+        "general": ["ollama/llama3.2:3b"],
+        "coding": ["ollama/llama3.2:3b"],
+        "reasoning": ["ollama/llama3.2:3b"],
+    },
     "16gb": {
         "general": ["ollama/gemma4:e4b", "ollama/llama3.2:3b"],
         "coding": ["ollama/qwen3.5:9b"],
@@ -34,6 +39,14 @@ EMBEDDING_CANDIDATES = [
     "ollama/qwen3-embedding:0.6b",
     "ollama/nomic-embed-text",
 ]
+
+FLOOR_EMBEDDING_CANDIDATES = ["ollama/embeddinggemma"]
+
+FLOOR_TIER_NOTE = (
+    "Detected RAM is below the local model pack floor. Switchboard recommends "
+    "llama3.2:3b for every chat role; heavier local models need more RAM, so "
+    "quota-aware routing to premium backends matters more on small machines."
+)
 
 APPLY_ROLE_MAP = {
     "simple": "general",
@@ -59,6 +72,7 @@ class LocalModelPackRecommendation:
     total_ram_bytes: int | None
     tier: str
     roles: list[ModelRecommendation]
+    notes: list[str]
 
     @property
     def pull_commands(self) -> list[str]:
@@ -115,6 +129,8 @@ def detect_total_ram_bytes() -> int | None:
 def ram_tier(total_ram_bytes: int | None) -> str:
     if total_ram_bytes is None:
         return "16gb"
+    if total_ram_bytes < 12 * GIB:
+        return "floor"
     if total_ram_bytes <= 18 * GIB:
         return "16gb"
     if total_ram_bytes < 48 * GIB:
@@ -134,13 +150,17 @@ def recommend_local_model_pack(
         model = _first_selectable_chat_model(by_id, candidates)
         if model is not None:
             roles.append(_recommendation(role, model))
-    embedding = _first_enabled_embedding_model(by_id, EMBEDDING_CANDIDATES)
+    embedding_candidates = (
+        FLOOR_EMBEDDING_CANDIDATES if tier == "floor" else EMBEDDING_CANDIDATES
+    )
+    embedding = _first_enabled_embedding_model(by_id, embedding_candidates)
     if embedding is not None:
         roles.append(_recommendation("embeddings", embedding))
     return LocalModelPackRecommendation(
         total_ram_bytes=total_ram_bytes,
         tier=tier,
         roles=roles,
+        notes=[FLOOR_TIER_NOTE] if tier == "floor" else [],
     )
 
 

@@ -209,6 +209,22 @@ Tests:
 - Phase check: `make check`, 681 collected, passed with NumPy 2.5.0 installed
   on Python 3.14. Python 3.11 was not re-verified locally.
 
+### Phase B - floor tier for `models --recommend`
+
+Status: done.
+
+- Added a `floor` RAM tier below 12 GiB.
+- The floor tier maps general, coding, and reasoning roles to
+  `ollama/llama3.2:3b` and embeddings to `ollama/embeddinggemma`.
+- `switchboard models --recommend` now prints a note that heavier local models
+  need more RAM and quota-aware routing matters more on tiny machines.
+- Existing 16 GB, 32 GB, and 48 GB+ tiers are otherwise unchanged.
+
+Tests:
+
+- Focused recommendation tests: 7 passed.
+- Phase check: `make check`, 683 collected, passed.
+
 ## Manual Follow-Ups
 
 Recommended 2026 local pulls:

@@ -593,6 +593,8 @@ def models_command(args: argparse.Namespace) -> None:
             print(f"  {role.role:10} {role.model_id}  (pull: ollama pull {role.ollama_tag})")
             if role.notes and "Ollama >= 0.14.3" in role.notes:
                 print(f"             note: {role.notes}")
+        for note in recommendation.notes:
+            print(f"Note: {note}")
         print("Pull commands:")
         for command in recommendation.pull_commands:
             print(f"  {command}")
