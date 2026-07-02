@@ -140,6 +140,13 @@ Feedback: previous feedback considered
 Manual premium preferences remain recommendation-only; Switchboard will not call Claude,
 ChatGPT, or Codex web sessions because of feedback.
 
+In the web UI, thumbs-up and thumbs-down are mutually exclusive and reversible. A
+"wrong model" correction is stored as the corrected backend, counts once per request,
+and can be retracted; retracting or changing the rating to "good" removes any pending
+wrong-model training example. `GET /api/feedback/pending` reports the count of
+unprocessed wrong-model corrections. Set `feedback_auto_retrain: false` to keep those
+corrections pending until you run `switchboard train-router` yourself.
+
 Usage and savings reports show counts for:
 
 - good

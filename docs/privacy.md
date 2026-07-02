@@ -117,6 +117,11 @@ enabled, private-mode reroutes and learned sensitivity escalations are not snaps
 Those requests can still store a correction label without persisting the assembled
 context.
 
+Wrong-model corrections are upserted per request and can be retracted. Retraction and
+re-rating to `good` remove pending feedback examples as well as the visible feedback
+record. `feedback_auto_retrain: false` keeps opt-in snapshots local but prevents the
+automatic threshold retrain path from starting; you can still retrain manually.
+
 ## Update Checks
 
 `switchboard version`, `switchboard upgrade --check`, and `switchboard ui` startup may

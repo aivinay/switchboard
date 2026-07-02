@@ -603,7 +603,11 @@ def test_ui_static_files_exist_and_call_chat_api(client: TestClient) -> None:
     # Internal backend ids appear only as API payload values (feedback
     # correction buttons); visible labels remain friendly names.
     assert '["Claude", "claude-code"]' in javascript
-    assert "feedback-followup" in javascript
+    assert "feedback-popover" in javascript
+    assert 'method: "DELETE"' in javascript
+    assert 'rating: "bad"' in javascript
+    assert "corrected_backend" in javascript
+    assert "nudge_enable_examples" in javascript
     page = client.get("/ui")
     assert page.status_code == 200
     assert "Switchboard" in page.text

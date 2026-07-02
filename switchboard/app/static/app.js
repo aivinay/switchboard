@@ -278,12 +278,26 @@ function makeMetaRow(item, displayModel, routing) {
   }
 
   if (routing && routing.request_id) {
-    meta.appendChild(makeFeedbackControls(routing.request_id));
+    meta.appendChild(
+      makeFeedbackControls(routing.request_id, {
+        answeredBackend: routing.backend,
+        rating: routing.feedback_rating,
+        correctedBackend: routing.corrected_backend,
+      })
+    );
   }
   return meta;
 }
 
-function makeFeedbackControls(requestId) {
+function backendLabel(backend) {
+  return {
+    ollama: "Ollama",
+    codex: "Codex",
+    "claude-code": "Claude",
+  }[backend] || backend;
+}
+
+function makeFeedbackControls(requestId, initial = {}) {
   const group = document.createElement("span");
   group.className = "feedback-group";
   const up = document.createElement("button");
@@ -291,16 +305,86 @@ function makeFeedbackControls(requestId) {
   up.className = "feedback-button";
   up.textContent = "\u{1F44D}";
   up.title = "Good answer";
+  up.setAttribute("aria-pressed", "false");
   const down = document.createElement("button");
   down.type = "button";
   down.className = "feedback-button";
   down.textContent = "\u{1F44E}";
   down.title = "Something was wrong";
-  const followup = document.createElement("span");
-  followup.className = "feedback-followup";
-  followup.hidden = true;
+  down.setAttribute("aria-pressed", "false");
+  const popover = document.createElement("span");
+  popover.className = "feedback-popover";
+  popover.hidden = true;
+  const status = document.createElement("span");
+  status.className = "feedback-status";
+  status.setAttribute("aria-live", "polite");
 
-  async function sendFeedback(payload, active) {
+  let rating = initial.rating || null;
+  let correctedBackend = initial.correctedBackend || null;
+  let draftDown = false;
+  let overlay = null;
+
+  function setPressed() {
+    const downActive = draftDown || rating === "bad" || rating === "wrong-route";
+    up.classList.toggle("active", rating === "good");
+    down.classList.toggle("active", downActive);
+    up.setAttribute("aria-pressed", String(rating === "good"));
+    down.setAttribute("aria-pressed", String(downActive));
+  }
+
+  function closePopover(fromStack = false) {
+    popover.hidden = true;
+    draftDown = false;
+    setPressed();
+    if (overlay && !fromStack) {
+      SB.dismissableStack.remove(overlay);
+    }
+  }
+
+  function renderStoredStatus() {
+    status.textContent = "";
+    if (rating === "wrong-route" && correctedBackend) {
+      status.textContent = `wrong model \u2192 ${backendLabel(correctedBackend)} \u2713`;
+    } else if (rating === "bad") {
+      status.textContent = "bad answer \u2713";
+    } else if (rating === "good") {
+      status.textContent = "good \u2713";
+    }
+  }
+
+  function showAck(payload) {
+    status.textContent = "";
+    const message = document.createElement("span");
+    if (payload.nudge_enable_examples) {
+      if (appState.feedback.enableNudgeShown) {
+        message.textContent = "Saved.";
+      } else {
+        appState.feedback.enableNudgeShown = true;
+        window.sessionStorage.setItem(SB.storageKeys.feedbackNudgeSeen, "1");
+        message.textContent = payload.ack_message || "Saved.";
+      }
+    } else {
+      message.textContent = payload.ack_message || "Saved.";
+    }
+    status.appendChild(message);
+    if (payload.copy_command) {
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "copy-button feedback-copy";
+      copy.textContent = "Copy";
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(payload.copy_command);
+          copy.textContent = "Copied";
+        } catch {
+          copy.textContent = "Failed";
+        }
+      });
+      status.appendChild(copy);
+    }
+  }
+
+  async function sendFeedback(payload) {
     try {
       const response = await fetch("/api/chat/feedback", {
         method: "POST",
@@ -308,64 +392,112 @@ function makeFeedbackControls(requestId) {
         body: JSON.stringify({ request_id: requestId, ...payload }),
       });
       if (response.ok) {
-        up.classList.toggle("active", active === up);
-        down.classList.toggle("active", active === down);
+        const result = await response.json();
+        rating = result.rating;
+        correctedBackend = result.preferred_model || null;
+        draftDown = false;
+        closePopover();
+        setPressed();
+        showAck(result);
       }
     } catch {
       /* feedback is best-effort */
     }
   }
 
-  function followupButton(label, payload) {
+  async function retractFeedback() {
+    try {
+      const response = await fetch(`/api/chat/feedback/${encodeURIComponent(requestId)}`, {
+        method: "DELETE",
+      });
+      if (response.ok) {
+        rating = null;
+        correctedBackend = null;
+        draftDown = false;
+        closePopover();
+        setPressed();
+        status.textContent = "retracted \u2713";
+      }
+    } catch {
+      /* feedback is best-effort */
+    }
+  }
+
+  function popoverButton(label, payload) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "followup-button";
     button.textContent = label;
     button.addEventListener("click", () => {
-      sendFeedback(payload, down);
-      followup.replaceChildren();
-      const ack = document.createElement("span");
-      ack.className = "followup-ack";
-      ack.textContent = "noted \u2713";
-      followup.appendChild(ack);
-      setTimeout(() => (followup.hidden = true), 1600);
+      sendFeedback(payload);
     });
     return button;
   }
 
-  function showFollowup() {
-    followup.replaceChildren();
-    followup.hidden = false;
-    followup.appendChild(
-      followupButton("Bad answer", { rating: "too-weak", detail: "bad_answer" })
-    );
+  function showPopover() {
+    popover.replaceChildren();
+    draftDown = true;
+    setPressed();
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "feedback-close";
+    close.textContent = "\u00d7";
+    close.title = "Close feedback options";
+    close.addEventListener("click", () => closePopover());
+    popover.appendChild(close);
+    popover.appendChild(popoverButton("Bad answer", { rating: "bad", detail: "bad_answer" }));
     const label = document.createElement("span");
     label.className = "followup-label";
     label.textContent = "wrong model \u2192";
-    followup.appendChild(label);
+    popover.appendChild(label);
     for (const [name, backend] of [
       ["Ollama", "ollama"],
       ["Codex", "codex"],
       ["Claude", "claude-code"],
     ]) {
-      followup.appendChild(
-        followupButton(name, {
+      if (backend === initial.answeredBackend) {
+        continue;
+      }
+      popover.appendChild(
+        popoverButton(name, {
           rating: "wrong-route",
           detail: "wrong_model",
           corrected_backend: backend,
         })
       );
     }
+    popover.hidden = false;
+    if (!overlay) {
+      overlay = SB.dismissableStack.register({
+        id: `feedback-${requestId}`,
+        element: popover,
+        trigger: down,
+        close: () => closePopover(true),
+      });
+    }
+    SB.dismissableStack.open(overlay);
   }
 
   up.addEventListener("click", () => {
-    followup.hidden = true;
-    sendFeedback({ rating: "good" }, up);
+    if (rating === "good") {
+      retractFeedback();
+      return;
+    }
+    sendFeedback({ rating: "good" });
   });
-  down.addEventListener("click", showFollowup);
+  down.addEventListener("click", () => {
+    if (!popover.hidden || rating === "bad" || rating === "wrong-route") {
+      retractFeedback();
+      return;
+    }
+    showPopover();
+  });
+  setPressed();
+  renderStoredStatus();
   group.appendChild(up);
   group.appendChild(down);
-  group.appendChild(followup);
+  group.appendChild(popover);
+  group.appendChild(status);
   return group;
 }
 
@@ -393,7 +525,13 @@ async function loadHistory() {
           markdown: message.content,
           displayModel: message.display_model,
           routing: message.request_id
-            ? { request_id: message.request_id, ...(message.routing || {}) }
+            ? {
+                request_id: message.request_id,
+                backend: message.backend,
+                feedback_rating: message.feedback_rating,
+                corrected_backend: message.corrected_backend,
+                ...(message.routing || {}),
+              }
             : null,
         });
       }

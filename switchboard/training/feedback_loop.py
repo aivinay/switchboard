@@ -127,6 +127,20 @@ class FeedbackExampleStore:
                 session.add(existing)
             session.commit()
 
+    def delete_example(self, request_id: str) -> bool:
+        deleted = False
+        with Session(self.engine) as session:
+            records = session.exec(
+                select(FeedbackExampleRecord).where(
+                    FeedbackExampleRecord.request_id == request_id
+                )
+            ).all()
+            for record in records:
+                session.delete(record)
+                deleted = True
+            session.commit()
+        return deleted
+
     def unprocessed_wrong_model_count(self) -> int:
         with Session(self.engine) as session:
             statement = (

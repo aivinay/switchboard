@@ -14,6 +14,10 @@
       isSending: false,
       privateChat: false,
     },
+    feedback: {
+      enableNudgeShown:
+        window.sessionStorage.getItem(SB.storageKeys.feedbackNudgeSeen) === "1",
+    },
     openOverlayStack: [],
   };
 })();

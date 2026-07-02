@@ -10,10 +10,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added `switchboard version`, global `switchboard --version`,
   `switchboard upgrade [--check]`, and the opt-out daily PyPI update check.
 - Added `GET /api/version` for cached UI update status.
+- Added reversible web-UI feedback controls, `DELETE /api/chat/feedback/{request_id}`,
+  and `GET /api/feedback/pending`.
 
 ### Fixed
 - Replaced the stale source-checkout `__version__` fallback with
   `pyproject.toml` discovery.
+- Made web feedback an upsert per request and scrub pending wrong-model examples when
+  feedback is retracted or changed to `good`.
 
 ## [0.3.0] - 2026-07-02
 

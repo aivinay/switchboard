@@ -231,6 +231,7 @@ preferences:
   finance_provider: "yahoo"
   news_provider: "google_news_rss"
   store_feedback_examples: false
+  feedback_auto_retrain: true
 quota:
   codex_calls_per_5h: null
   claude_calls_per_week: null

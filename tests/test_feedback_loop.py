@@ -372,6 +372,188 @@ def test_duplicate_feedback_counts_once_toward_threshold(
     assert store.unprocessed_wrong_model_examples()[0].corrected_backend == "claude-code"
 
 
+def test_wrong_model_feedback_retraction_clears_records_examples_and_pending(
+    client: TestClient, fake_backends: None
+) -> None:
+    from sqlmodel import Session, select
+
+    from switchboard.app.models.telemetry import FeedbackRecord
+
+    container = client.app.state.container
+    container.personal_config.preferences.store_feedback_examples = True
+    container.personal_config.preferences.feedback_retrain_threshold = 999
+
+    chat = client.post("/api/chat", json={"message": "Say OK only.", "backend": "ollama"})
+    session_id = chat.json()["session_id"]
+    history = client.get("/api/chat/history", params={"session_id": session_id}).json()
+    request_id = history["messages"][-1]["request_id"]
+
+    response = client.post(
+        "/api/chat/feedback",
+        json={
+            "request_id": request_id,
+            "rating": "wrong-route",
+            "detail": "wrong_model",
+            "corrected_backend": "codex",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["pending_corrections"] == 1
+    assert client.get("/api/feedback/pending").json() == {"pending": 1}
+
+    delete = client.delete(f"/api/chat/feedback/{request_id}")
+
+    assert delete.status_code == 200
+    assert delete.json()["pending"] == 0
+    store = FeedbackExampleStore(container.memory_repository.engine)
+    assert store.unprocessed_wrong_model_examples() == []
+    with Session(container.memory_repository.engine) as session:
+        assert session.exec(select(FeedbackRecord)).all() == []
+    assert client.get("/api/feedback/pending").json() == {"pending": 0}
+
+
+def test_wrong_model_to_good_rerating_scrubs_examples_identically(
+    client: TestClient, fake_backends: None
+) -> None:
+    from sqlmodel import Session, select
+
+    from switchboard.app.models.telemetry import FeedbackRecord
+
+    container = client.app.state.container
+    container.personal_config.preferences.store_feedback_examples = True
+    container.personal_config.preferences.feedback_retrain_threshold = 999
+
+    chat = client.post("/api/chat", json={"message": "Say OK only.", "backend": "ollama"})
+    session_id = chat.json()["session_id"]
+    history = client.get("/api/chat/history", params={"session_id": session_id}).json()
+    request_id = history["messages"][-1]["request_id"]
+
+    client.post(
+        "/api/chat/feedback",
+        json={
+            "request_id": request_id,
+            "rating": "wrong-route",
+            "detail": "wrong_model",
+            "corrected_backend": "codex",
+        },
+    )
+    response = client.post(
+        "/api/chat/feedback",
+        json={"request_id": request_id, "rating": "good"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["rating"] == "good"
+    assert response.json()["preferred_model"] is None
+    store = FeedbackExampleStore(container.memory_repository.engine)
+    assert store.unprocessed_wrong_model_examples() == []
+    assert store.unprocessed_wrong_model_count() == 0
+    with Session(container.memory_repository.engine) as session:
+        records = session.exec(select(FeedbackRecord)).all()
+    assert len(records) == 1
+    assert records[0].rating == "good"
+    assert records[0].preferred_model is None
+
+
+def test_history_restores_feedback_rating_and_corrected_backend(
+    client: TestClient, fake_backends: None
+) -> None:
+    chat = client.post("/api/chat", json={"message": "Say OK only.", "backend": "ollama"})
+    session_id = chat.json()["session_id"]
+    history = client.get("/api/chat/history", params={"session_id": session_id}).json()
+    request_id = history["messages"][-1]["request_id"]
+
+    client.post(
+        "/api/chat/feedback",
+        json={
+            "request_id": request_id,
+            "rating": "wrong-route",
+            "detail": "wrong_model",
+            "corrected_backend": "claude-code",
+        },
+    )
+
+    restored = client.get("/api/chat/history", params={"session_id": session_id}).json()
+    assistant = restored["messages"][-1]
+    assert assistant["feedback_rating"] == "wrong-route"
+    assert assistant["corrected_backend"] == "claude-code"
+
+
+def test_feedback_auto_retrain_off_suppresses_trigger(
+    client: TestClient, fake_backends: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, object]] = []
+    container = client.app.state.container
+    container.personal_config.preferences.store_feedback_examples = True
+    container.personal_config.preferences.feedback_auto_retrain = False
+    container.personal_config.preferences.feedback_retrain_threshold = 1
+    monkeypatch.setattr(
+        "switchboard.training.feedback_loop.maybe_trigger_retraining",
+        lambda **kwargs: calls.append(kwargs) or True,
+    )
+
+    chat = client.post("/api/chat", json={"message": "Say OK only.", "backend": "ollama"})
+    session_id = chat.json()["session_id"]
+    history = client.get("/api/chat/history", params={"session_id": session_id}).json()
+    request_id = history["messages"][-1]["request_id"]
+    response = client.post(
+        "/api/chat/feedback",
+        json={
+            "request_id": request_id,
+            "rating": "wrong-route",
+            "detail": "wrong_model",
+            "corrected_backend": "codex",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["copy_command"] is None
+    assert calls == []
+
+
+def test_feedback_ack_copy_matches_feedback_configuration(
+    client: TestClient, fake_backends: None
+) -> None:
+    container = client.app.state.container
+
+    def correct_next(prompt: str, backend: str = "codex") -> dict[str, object]:
+        chat = client.post("/api/chat", json={"message": prompt, "backend": "ollama"})
+        session_id = chat.json()["session_id"]
+        history = client.get("/api/chat/history", params={"session_id": session_id}).json()
+        request_id = history["messages"][-1]["request_id"]
+        response = client.post(
+            "/api/chat/feedback",
+            json={
+                "request_id": request_id,
+                "rating": "wrong-route",
+                "detail": "wrong_model",
+                "corrected_backend": backend,
+            },
+        )
+        assert response.status_code == 200
+        return response.json()
+
+    container.personal_config.preferences.store_feedback_examples = False
+    default_ack = correct_next("Say OK only.")
+    assert "immediately nudges routing preferences" in default_ack["ack_message"]
+    assert default_ack["nudge_enable_examples"] is True
+
+    container.personal_config.preferences.store_feedback_examples = True
+    container.personal_config.preferences.feedback_auto_retrain = True
+    container.personal_config.preferences.feedback_retrain_threshold = 5
+    auto_ack = correct_next("Say OK only again.")
+    assert "1 of 5" in auto_ack["ack_message"]
+    assert auto_ack["copy_command"] is None
+
+    container.personal_config.preferences.feedback_auto_retrain = False
+    second_manual = correct_next("Say OK only a third time.")
+    assert second_manual["pending_corrections"] == 2
+    assert second_manual["copy_command"] is None
+    third_manual = correct_next("Say OK only a fourth time.", backend="claude-code")
+    assert third_manual["pending_corrections"] == 3
+    assert third_manual["copy_command"] == "switchboard train-router"
+
+
 def test_sensitive_request_leaves_no_context_snapshot(
     client: TestClient, fake_backends: None
 ) -> None:
