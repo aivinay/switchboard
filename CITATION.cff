@@ -8,7 +8,7 @@ authors:
 repository-code: "https://github.com/aivinay/switchboard"
 url: "https://github.com/aivinay/switchboard"
 license: MIT
-version: 0.3.0
+version: 0.4.0
 date-released: "2026-07-02"
 keywords:
   - LLM routing

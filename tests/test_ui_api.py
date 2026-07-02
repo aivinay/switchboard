@@ -552,7 +552,7 @@ def test_ui_version_endpoint_reads_cached_update_status(
 
     assert response.status_code == 200
     assert response.json() == {
-        "installed": "0.3.0",
+        "installed": "0.4.0",
         "latest": "9.9.9",
         "update_available": True,
     }
