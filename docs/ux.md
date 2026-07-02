@@ -114,6 +114,10 @@ per-backend usage, and a last-7-days request trend. Quota meters read `GET /api/
 and stay hidden when both soft budgets are unset. The composer shows a lock indicator
 when private mode is enabled.
 
+The welcome demo prompts intentionally auto-send so one click shows live routing chips.
+The private-chat-off confirmation intentionally uses a native browser dialog to keep
+the dependency-free UI unmistakable.
+
 ## Usage And Feedback
 
 Usage summarizes request mix, estimated API spend, premium units saved, cache hits, and

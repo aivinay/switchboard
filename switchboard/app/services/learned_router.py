@@ -42,6 +42,7 @@ BACKEND_BY_ROUTE_TYPE = {
 
 LOGGER = logging.getLogger(__name__)
 _LOGGED_WEIGHT_WARNINGS: set[str] = set()
+DEGENERATE_EMBEDDING_ERROR = "degenerate_embedding"
 
 
 @dataclass(frozen=True)
@@ -166,6 +167,16 @@ def predict_probabilities(weights: RouterWeights, vector: list[float]) -> dict[s
     return dict(zip(weights.classes, probs, strict=True))
 
 
+def embedding_is_degenerate(vector: list[float], *, min_variance: float = 1e-12) -> bool:
+    if len(vector) < 2:
+        return True
+    if any(not math.isfinite(value) for value in vector):
+        return True
+    mean = sum(vector) / len(vector)
+    variance = sum((value - mean) ** 2 for value in vector) / len(vector)
+    return variance <= min_variance
+
+
 class LearnedRouter:
     def __init__(
         self,
@@ -239,6 +250,13 @@ class LearnedRouter:
                     f"embedding dim {len(vector)} does not match trained dim "
                     f"{self.weights.dim}"
                 ),
+            )
+        if embedding_is_degenerate(vector):
+            return LearnedRouteResult(
+                success=False,
+                latency_ms=latency_ms,
+                model=self.weights.embedding_model,
+                error=f"{DEGENERATE_EMBEDDING_ERROR}: near-zero variance",
             )
         probabilities = self._predict(vector)
         ranked = sorted(probabilities.items(), key=lambda kv: kv[1], reverse=True)

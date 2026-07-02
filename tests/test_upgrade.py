@@ -109,6 +109,59 @@ def test_detect_upgrade_plan_for_git_checkout(tmp_path: Path) -> None:
     assert plan.install_method == "git-checkout"
     assert plan.can_execute is False
     assert "git pull" in plan.command_text
+    assert "make install" in plan.command_text
+    assert "pip install -e" not in plan.command_text
+
+
+def test_detect_upgrade_plan_walks_nested_package_path_to_repo_root(tmp_path: Path) -> None:
+    package_file = tmp_path / "switchboard" / "app" / "services" / "upgrade.py"
+    package_file.parent.mkdir(parents=True)
+    package_file.write_text("", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname='switchboard-local'\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".git").mkdir()
+
+    plan = detect_upgrade_plan(
+        prefix=Path("/tmp/project/.venv"),
+        base_prefix=Path("/usr/local/python"),
+        executable="/tmp/project/.venv/bin/python",
+        package_file=package_file,
+        direct_url_text=None,
+        externally_managed=False,
+    )
+
+    assert plan.install_method == "git-checkout"
+    assert plan.can_execute is False
+    assert plan.command == ("sh", "-c", f"cd {tmp_path} && git pull && make install")
+
+
+def test_detect_upgrade_plan_for_editable_checkout_uses_project_install(
+    tmp_path: Path,
+) -> None:
+    package_file = tmp_path / "switchboard" / "app" / "__init__.py"
+    package_file.parent.mkdir(parents=True)
+    package_file.write_text("", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname='switchboard-local'\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".git").mkdir()
+    direct_url = '{"url": "file:///tmp/switchboard", "dir_info": {"editable": true}}'
+
+    plan = detect_upgrade_plan(
+        prefix=Path("/tmp/project/.venv"),
+        base_prefix=Path("/usr/local/python"),
+        executable="/tmp/project/.venv/bin/python",
+        package_file=package_file,
+        direct_url_text=direct_url,
+        externally_managed=False,
+    )
+
+    assert plan.install_method == "editable"
+    assert plan.can_execute is False
+    assert plan.command == ("sh", "-c", f"cd {tmp_path} && git pull && make install")
 
 
 def test_detect_upgrade_plan_for_externally_managed_python() -> None:

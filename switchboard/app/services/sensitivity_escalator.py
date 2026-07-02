@@ -29,7 +29,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from switchboard.app.services.learned_router import (
+    DEGENERATE_EMBEDDING_ERROR,
     RouterWeights,
+    embedding_is_degenerate,
     predict_probabilities,
 )
 
@@ -122,6 +124,14 @@ class LearnedSensitivityEscalator:
                     f"embedding dim {len(vector)} does not match trained dim "
                     f"{self.weights.dim}"
                 ),
+            )
+        if embedding_is_degenerate(vector):
+            return SensitivityEscalation(
+                success=False,
+                escalate=False,
+                latency_ms=latency_ms,
+                model=self.weights.embedding_model,
+                error=f"{DEGENERATE_EMBEDDING_ERROR}: near-zero variance",
             )
         probabilities = predict_probabilities(self.weights, vector)
         sensitive_prob = probabilities.get("sensitive", 0.0)

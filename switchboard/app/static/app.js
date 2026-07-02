@@ -1069,6 +1069,11 @@ function formatNumber(value) {
   return new Intl.NumberFormat().format(value || 0);
 }
 
+function countLabel(value, singular, plural = `${singular}s`) {
+  const count = Number(value || 0);
+  return `${formatNumber(count)} ${count === 1 ? singular : plural}`;
+}
+
 function renderQuotaMeters(payload) {
   if (!quotaMeters || !payload || !payload.enabled) {
     if (quotaMeters) {
@@ -1219,11 +1224,12 @@ function renderFeedbackQuality(feedback) {
     feedbackQuality.textContent = "No ratings yet.";
     return;
   }
-  feedbackQuality.textContent = `You rated ${formatNumber(total)} answers — ${formatNumber(
+  feedbackQuality.textContent = `You rated ${countLabel(total, "answer")} — ${formatNumber(
     feedback.good
-  )} good, ${formatNumber(feedback.corrected)} corrected · ${formatNumber(
-    feedback.pending_corrections
-  )} corrections pending`;
+  )} good, ${countLabel(feedback.corrected, "correction")} · ${countLabel(
+    feedback.pending_corrections,
+    "correction"
+  )} pending`;
 }
 
 function renderDashboard(payload) {

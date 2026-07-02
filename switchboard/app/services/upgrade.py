@@ -60,8 +60,18 @@ def _is_editable_install(direct_url_text: str | None) -> bool:
 
 
 def _git_checkout_root(package_file: Path) -> Path | None:
-    repo_root = package_file.resolve().parent.parent
-    return repo_root if (repo_root / ".git").exists() else None
+    if not package_file.exists():
+        return None
+    start = package_file.resolve().parent
+    for candidate in (start, *start.parents):
+        if (candidate / "pyproject.toml").exists() or (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+def _checkout_install_command(root: Path) -> tuple[str, ...]:
+    update = "git pull && " if (root / ".git").exists() else ""
+    return ("sh", "-c", f"cd {shlex.quote(str(root))} && {update}make install")
 
 
 def _externally_managed() -> bool:
@@ -101,26 +111,26 @@ def detect_upgrade_plan(
 
     if _is_editable_install(direct_url_value):
         root = repo_root or package_path.resolve().parent.parent
-        return _manual_plan(
-            "editable",
-            (
+        command = (
+            _checkout_install_command(root)
+            if repo_root is not None
+            else (
                 "sh",
                 "-c",
                 f"cd {shlex.quote(str(root))} && "
                 f"{shlex.quote(resolved_executable)} -m pip install -e .",
-            ),
+            )
+        )
+        return _manual_plan(
+            "editable",
+            command,
             "Editable installs should be upgraded from the checkout.",
         )
     if repo_root is not None:
         return _manual_plan(
             "git-checkout",
-            (
-                "sh",
-                "-c",
-                f"cd {shlex.quote(str(repo_root))} && git pull && "
-                f"{shlex.quote(resolved_executable)} -m pip install -e .",
-            ),
-            "Source checkouts should be updated with git, then reinstalled.",
+            _checkout_install_command(repo_root),
+            "Source checkouts should be updated with the project install target.",
         )
     is_externally_managed = resolved_prefix == resolved_base and (
         externally_managed if externally_managed is not None else _externally_managed()

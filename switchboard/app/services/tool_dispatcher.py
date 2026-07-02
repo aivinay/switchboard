@@ -27,7 +27,9 @@ from pathlib import Path
 
 from switchboard.app.models.capabilities import Capability
 from switchboard.app.services.learned_router import (
+    DEGENERATE_EMBEDDING_ERROR,
     RouterWeights,
+    embedding_is_degenerate,
     predict_probabilities,
 )
 
@@ -148,6 +150,13 @@ class LearnedToolDispatcher:
                     f"embedding dim {len(vector)} does not match trained dim "
                     f"{self.weights.dim}"
                 ),
+            )
+        if embedding_is_degenerate(vector):
+            return ToolDispatchResult(
+                success=False,
+                latency_ms=latency_ms,
+                model=self.weights.embedding_model,
+                error=f"{DEGENERATE_EMBEDDING_ERROR}: near-zero variance",
             )
         probabilities = predict_probabilities(self.weights, vector)
         ranked = sorted(probabilities.items(), key=lambda kv: kv[1], reverse=True)
