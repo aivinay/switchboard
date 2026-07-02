@@ -16,6 +16,7 @@ Router modes (configured in personal.yaml or via CLI):
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import time
@@ -194,20 +195,32 @@ class LlmRouter:
         )
 
     def _parse(self, raw: str) -> tuple[str, float] | None:
-        match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
-        if not match:
-            return None
-        try:
-            data = json.loads(match.group(0))
-        except json.JSONDecodeError:
-            return None
         route_key = "policy" if self.arch_router else "route_type"
-        route_type = str(data.get(route_key, "")).strip().lower()
         allowed_routes = (
             {"tool", "local", "coding", "reasoning"}
             if self.arch_router
             else ROUTE_TYPES
         )
+        match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+        if not match:
+            if self.arch_router:
+                route_type = raw.strip().strip("\"'").lower()
+                if route_type in allowed_routes:
+                    return route_type, 1.0
+            return None
+        try:
+            data = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            if not self.arch_router:
+                return None
+            try:
+                parsed = ast.literal_eval(match.group(0))
+            except (SyntaxError, ValueError):
+                return None
+            if not isinstance(parsed, dict):
+                return None
+            data = parsed
+        route_type = str(data.get(route_key, "")).strip().lower()
         if route_type not in allowed_routes:
             return None
         try:

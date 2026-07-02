@@ -138,6 +138,31 @@ def test_arch_router_parses_policy_selection() -> None:
     assert result.confidence == 0.77
 
 
+def test_arch_router_parses_python_style_policy_dict() -> None:
+    router = LlmRouter(
+        model=ARCH_ROUTER_MODEL,
+        complete=lambda _: "{'policy': 'local', 'confidence': 1}",
+    )
+
+    result = router.classify("summarize this note")
+
+    assert result.success
+    assert result.route_type == "local"
+    assert result.backend == "ollama"
+    assert result.confidence == 1.0
+
+
+def test_arch_router_parses_bare_policy_label() -> None:
+    router = LlmRouter(model=ARCH_ROUTER_MODEL, complete=lambda _: "tool")
+
+    result = router.classify("what is 234 * 78?")
+
+    assert result.success
+    assert result.route_type == "tool"
+    assert result.backend == "ollama"
+    assert result.confidence == 1.0
+
+
 def test_arch_router_rejects_unknown_policy() -> None:
     router = LlmRouter(
         model=ARCH_ROUTER_MODEL,
