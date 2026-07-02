@@ -53,6 +53,7 @@ from switchboard.app.services.provider_status import (
 from switchboard.app.services.semantic_memory import EmbeddingUnavailableError
 from switchboard.app.services.switchboard_core import SwitchboardCoreService
 from switchboard.app.services.update_check import VersionStatus, cached_version_status
+from switchboard.app.services.upgrade import UpgradePlan, detect_upgrade_plan
 from switchboard.app.storage.db import create_db_engine, init_db
 from switchboard.evals.quality_bench import (
     DEFAULT_CONDITIONS,
@@ -126,6 +127,28 @@ def print_version_status(status: VersionStatus) -> None:
 
 def version_command(args: argparse.Namespace) -> None:
     print_version_status(cached_version_status(__version__))
+
+
+def print_upgrade_plan(plan: UpgradePlan) -> None:
+    print(f"Install method: {plan.install_method}")
+    print(f"Upgrade command: {plan.command_text}")
+    if not plan.can_execute:
+        print(plan.reason)
+
+
+def upgrade_command(args: argparse.Namespace) -> None:
+    plan = detect_upgrade_plan()
+    if args.check:
+        print_version_status(cached_version_status(__version__))
+        print_upgrade_plan(plan)
+        return
+    if not plan.can_execute:
+        print_upgrade_plan(plan)
+        return
+    print(f"Running: {plan.command_text}")
+    completed = subprocess.run(plan.command, check=False)
+    if completed.returncode != 0:
+        raise SystemExit(completed.returncode)
 
 
 USER_REASON_LABELS = {
@@ -1465,6 +1488,14 @@ def make_parser() -> argparse.ArgumentParser:
 
     version = subparsers.add_parser("version", help="Show the installed Switchboard version")
     version.set_defaults(func=version_command)
+
+    upgrade = subparsers.add_parser("upgrade", help="Upgrade switchboard-local")
+    upgrade.add_argument(
+        "--check",
+        action="store_true",
+        help="Show upgrade status and command without running it",
+    )
+    upgrade.set_defaults(func=upgrade_command)
 
     route = subparsers.add_parser(
         "route",

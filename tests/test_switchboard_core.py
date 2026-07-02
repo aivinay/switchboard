@@ -33,6 +33,7 @@ from switchboard.app.services.cost import CostEstimator
 from switchboard.app.services.quota import QuotaLedgerService
 from switchboard.app.services.semantic_memory import EmbeddingUnavailableError
 from switchboard.app.services.switchboard_core import SwitchboardCoreService
+from switchboard.app.services.upgrade import UpgradePlan
 from switchboard.app.storage.db import create_db_engine, init_db
 from switchboard.app.storage.repositories import BackendMetricsRepository
 from switchboard.cli import (
@@ -48,6 +49,7 @@ from switchboard.cli import (
     train_dispatcher_command,
     train_router_command,
     train_sensitivity_command,
+    upgrade_command,
     version_command,
 )
 
@@ -1452,6 +1454,78 @@ def test_main_without_command_still_errors(monkeypatch: pytest.MonkeyPatch) -> N
 
     with pytest.raises(SystemExit):
         main()
+
+
+def test_upgrade_check_reports_plan_without_executing(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.setattr(
+        "switchboard.cli.detect_upgrade_plan",
+        lambda: UpgradePlan(
+            install_method="venv-pip",
+            command=("python", "-m", "pip", "install", "--upgrade", "switchboard-local"),
+            can_execute=True,
+            reason="test plan",
+        ),
+    )
+    monkeypatch.setattr(
+        "switchboard.cli.subprocess.run",
+        lambda *args, **kwargs: pytest.fail("upgrade --check must not execute"),
+    )
+
+    upgrade_command(argparse.Namespace(check=True))
+
+    output = capsys.readouterr().out
+    assert "Switchboard 0.3.0" in output
+    assert "Install method: venv-pip" in output
+    assert "Upgrade command: python -m pip install --upgrade switchboard-local" in output
+
+
+def test_upgrade_command_prints_manual_plan_without_executing(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.setattr(
+        "switchboard.cli.detect_upgrade_plan",
+        lambda: UpgradePlan(
+            install_method="editable",
+            command=("sh", "-c", "cd /repo && python -m pip install -e ."),
+            can_execute=False,
+            reason="Editable installs should be upgraded from the checkout.",
+        ),
+    )
+    monkeypatch.setattr(
+        "switchboard.cli.subprocess.run",
+        lambda *args, **kwargs: pytest.fail("manual upgrade plans must not execute"),
+    )
+
+    upgrade_command(argparse.Namespace(check=False))
+
+    output = capsys.readouterr().out
+    assert "Install method: editable" in output
+    assert "Editable installs should be upgraded" in output
+
+
+def test_upgrade_command_propagates_subprocess_exit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Result:
+        returncode = 7
+
+    monkeypatch.setattr(
+        "switchboard.cli.detect_upgrade_plan",
+        lambda: UpgradePlan(
+            install_method="venv-pip",
+            command=("python", "-m", "pip", "install", "--upgrade", "switchboard-local"),
+            can_execute=True,
+            reason="test plan",
+        ),
+    )
+    monkeypatch.setattr("switchboard.cli.subprocess.run", lambda *args, **kwargs: Result())
+
+    with pytest.raises(SystemExit) as exc:
+        upgrade_command(argparse.Namespace(check=False))
+
+    assert exc.value.code == 7
 
 
 def test_core_route_preview_and_auto_ask_choose_same_backend(tmp_path: Path) -> None:
